@@ -69,6 +69,7 @@ export class NetClient {
     // Creative mode
     this.mode = null;
     this.color = 0;
+    this.skin = 'stork';   // selected bird avatar id (see flight/AvatarBird.js BIRDS)
     this.lobby = null;
     this.course = null;
     this.worldApplied = false;
@@ -141,13 +142,14 @@ export class NetClient {
   }
 
   // ---- reducer wrappers ----
-  join({ code, name, mode, color }) {
+  join({ code, name, mode, color, skin }) {
     this.mode = mode || this.mode;
     if (typeof color === 'number') this.color = color % 8;
+    if (typeof skin === 'string' && skin) this.skin = skin;
     if (this.mode === 'creative' && !this.lobby) this._initCreative();
     if (this.mode === 'survival' && !this._survInit && this.connected) this._initSurvival();
-    if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color }; return; }
-    this.conn.reducers.joinRoom({ code, name, mode, color: this.color });
+    if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color, skin: this.skin }; return; }
+    this.conn.reducers.joinRoom({ code, name, mode, color: this.color, skin: this.skin });
   }
 
   _initCreative() {
@@ -179,6 +181,9 @@ export class NetClient {
 
   setName(name) { if (this.connected) this.conn.reducers.setName({ name }); }
   setColor(color) { this.color = color % 8; if (this.connected) this.conn.reducers.setColor({ color: this.color }); }
+  setSkin(id) { if (typeof id === 'string' && id) this.skin = id; if (this.connected) this.conn.reducers.setSkin({ skin: this.skin }); }
+  /** The local player's chosen avatar id — prefers the synced row, falls back to our local pick. */
+  mySkin() { const r = this._myRow(); return (r && r.skin) || this.skin || 'stork'; }
   startGame() { if (this.connected) this.conn.reducers.startGame({}); }
   startBuild() { if (this.connected) this.conn.reducers.startBuild(); }
   leave() {
@@ -250,7 +255,7 @@ export class NetClient {
         if (r.roomId !== this.myRoomId || !r.online) continue;
         const me = r.identity.toHexString() === this.identityHex;
         const host = !!(room && room.host.toHexString() === r.identity.toHexString());
-        roster.push({ name: r.name, color: r.color, me, host, score: r.score, finished: r.finished, alive: r.alive });
+        roster.push({ name: r.name, color: r.color, skin: r.skin, me, host, score: r.score, finished: r.finished, alive: r.alive });
         if (!me) remoteRows.push(r);
       }
     }
@@ -264,6 +269,8 @@ export class NetClient {
     // 4) Surface room state for external UI/debug.
     if (this.onState) {
       const isHost = !!(room && room.host.toHexString() === this.identityHex);
+      // My own selected skin: prefer the live server row, fall back to local cache.
+      const mySkin = (myRow && myRow.skin) || this.skin;
       this.onState({
         connected: this.connected,
         inRoom: this.myRoomId !== 0n,
@@ -272,6 +279,7 @@ export class NetClient {
         mode: room ? room.mode : null,
         isHost,
         players: roster.length,
+        skin: mySkin,
         roster,
       });
     }

@@ -197,6 +197,45 @@ const flightPhysics = new FlightPhysics(flightState);
 const cameraRig = new CameraRig(camera, flightState);
 const birdModel = new BirdModel(scene);
 
+// --- Local bird avatar (skins) ---
+// The default local bird is the Stork (birdModel above). If the player has chosen
+// a different skin we load that GLB avatar ONCE, hide the Stork, and drive the
+// avatar in the loop instead. Source of the chosen skin (first non-stork wins):
+//   1) ?skin=<id> URL param — a test/dev hook so any tab can force a skin.
+//   2) net.mySkin() — the local player's synced row (set via the locker → join).
+// Stork stays the existing BirdModel path, so single-player / no-skin is unchanged.
+let localAvatar = null;          // loaded AvatarBird wrapper (or null = use birdModel)
+let _localSkinLoading = false;
+let _localSkinResolved = false;  // we've committed to a skin (stork or avatar) — stop re-checking
+const urlSkin = (() => {
+  const v = new URLSearchParams(location.search).get('skin');
+  return v && v.trim() ? v.trim() : null;
+})();
+
+async function _useLocalSkin(skinId) {
+  if (_localSkinLoading || _localSkinResolved) return;
+  if (!skinId || skinId === 'stork') { _localSkinResolved = true; return; } // keep Stork
+  _localSkinLoading = true;
+  try {
+    const { loadAvatar } = await import('./flight/AvatarBird.js');
+    const av = await loadAvatar(scene, skinId);
+    localAvatar = av;
+    // Hide the default Stork — the avatar is the local bird now.
+    if (birdModel && birdModel._model) birdModel._model.visible = false;
+    birdModel._hiddenForAvatar = true; // guard re-show if Stork loads later
+    _localSkinResolved = true;
+    console.log(`[skin] local avatar "${skinId}" loaded (tier ${av.tier})`);
+  } catch (e) {
+    console.warn('[skin] local avatar load failed:', e);
+    _localSkinResolved = true; // fall back to Stork; don't retry-spam
+  } finally {
+    _localSkinLoading = false;
+  }
+}
+
+// URL hook resolves immediately (no net needed).
+if (urlSkin) _useLocalSkin(urlSkin);
+
 // Water effects
 const waterSpray = new WaterSpray(scene);
 const fishCatcher = new FishCatcher(scene);
@@ -430,6 +469,7 @@ if (roomCode) {
   const FLOCK_PALETTE = ['#ff5a5f', '#3fa7ff', '#5ad469', '#ffd23f', '#b06bff', '#ff8c42', '#2ec4b6', '#f15bb5'];
   const savedName = (() => { try { return localStorage.getItem('flockd.name'); } catch { return null; } })();
   const savedColor = (() => { try { return parseInt(localStorage.getItem('flockd.color'), 10) || 0; } catch { return 0; } })();
+  const savedSkin = (() => { try { return localStorage.getItem('flockd.skin') || null; } catch { return null; } })();
 
   net = new NetClient({
     scene, localState: flightState, flightPhysics,
@@ -442,12 +482,16 @@ if (roomCode) {
     palette: FLOCK_PALETTE,
     name: savedName,
     color: savedColor,
+    skin: savedSkin,
     onSetName: (n) => net.setName(n),
     onSetColor: (c) => net.setColor(c),
-    onCommit: ({ code, name, color, mode }) => {
+    onSetSkin: (id) => net.setSkin(id),
+    onCommit: ({ code, name, color, mode, skin }) => {
       net.setName(name);
       net.setColor(color);
-      net.join({ code, name, mode, color });
+      if (skin) net.setSkin(skin);
+      net.join({ code, name, mode, color, skin });
+      try { if (skin) localStorage.setItem('flockd.skin', skin); } catch (_) {}
       shell.showConnecting(`Entering ${String(code).toUpperCase()}…`);
     },
     onLeave: () => { net.leave(); },
@@ -726,7 +770,14 @@ loop.onUpdate((dt) => {
 
     // Camera follow
     cameraRig.update(dt);
-    birdModel.update(flightState, dt, camera);
+    if (localAvatar) {
+      // Skinned local bird: keep the Stork hidden (covers a late Stork GLB load)
+      // and drive the avatar with flapStrength ≈ how hard the player is flapping.
+      if (birdModel._model && birdModel._model.visible) birdModel._model.visible = false;
+      localAvatar.update(flightState, dt, camera, Math.max(0, Math.min(1, input.lift)));
+    } else {
+      birdModel.update(flightState, dt, camera);
+    }
     if (flock) flock.update(flightState, dt);
 
     // Water effects
@@ -753,6 +804,14 @@ loop.onUpdate((dt) => {
   // Multiplayer: push my transform (throttled) + render remote birds.
   if (net) net.update(dt, camera);
   setSpectate(!!(net && net.amDead));
+
+  // Resolve the local skin from the synced player row (once), unless a ?skin=
+  // URL override already committed us. mySkin() returns 'stork' until our row
+  // arrives, so we only act on a real non-stork pick.
+  if (net && !urlSkin && !_localSkinResolved && !_localSkinLoading) {
+    const s = net.mySkin();
+    if (s && s !== 'stork') _useLocalSkin(s);
+  }
 
   if (postFX && postFX.enabled) postFX.render();
   else renderer.render(scene, camera);

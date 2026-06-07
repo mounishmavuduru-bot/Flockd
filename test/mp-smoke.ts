@@ -48,8 +48,8 @@ async function main() {
   if (aHex === bHex) throw new Error('FAIL: clients share an identity');
 
   console.log(`[smoke] both join room ${ROOM}...`);
-  A.conn.reducers.joinRoom({ code: ROOM, name: 'AlphaBird', mode: 'creative', color: 0 });
-  B.conn.reducers.joinRoom({ code: ROOM, name: 'BetaBird', mode: 'creative', color: 1 });
+  A.conn.reducers.joinRoom({ code: ROOM, name: 'AlphaBird', mode: 'creative', color: 0, skin: 'stork' });
+  B.conn.reducers.joinRoom({ code: ROOM, name: 'BetaBird', mode: 'creative', color: 1, skin: 'stork' });
   await sleep(800);
 
   // Confirm B sees A's player row in the same room.

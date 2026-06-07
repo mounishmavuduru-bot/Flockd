@@ -45,6 +45,7 @@ import ReportDeathReducer from "./report_death_reducer";
 import ReportFinishReducer from "./report_finish_reducer";
 import SetColorReducer from "./set_color_reducer";
 import SetNameReducer from "./set_name_reducer";
+import SetSkinReducer from "./set_skin_reducer";
 import SetWorldConfigReducer from "./set_world_config_reducer";
 import SpawnPredatorReducer from "./spawn_predator_reducer";
 import StartBuildReducer from "./start_build_reducer";
@@ -204,6 +205,7 @@ const reducersSchema = __reducers(
   __reducerSchema("report_finish", ReportFinishReducer),
   __reducerSchema("set_color", SetColorReducer),
   __reducerSchema("set_name", SetNameReducer),
+  __reducerSchema("set_skin", SetSkinReducer),
   __reducerSchema("set_world_config", SetWorldConfigReducer),
   __reducerSchema("spawn_predator", SpawnPredatorReducer),
   __reducerSchema("start_build", StartBuildReducer),

@@ -45,6 +45,7 @@ export const Player = __t.object("Player", {
   roomId: __t.u64(),
   name: __t.string(),
   color: __t.u32(),
+  skin: __t.string(),
   x: __t.f32(),
   y: __t.f32(),
   z: __t.f32(),

@@ -15,6 +15,7 @@ export default __t.row({
   roomId: __t.u64().name("room_id"),
   name: __t.string(),
   color: __t.u32(),
+  skin: __t.string(),
   x: __t.f32(),
   y: __t.f32(),
   z: __t.f32(),

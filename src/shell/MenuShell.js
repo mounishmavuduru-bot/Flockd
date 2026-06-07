@@ -10,7 +10,7 @@
  * lobby ("flk-") or anything else on the page.
  *
  * API (built to the main.js contract):
- *   new MenuShell({ palette, name, color, onCommit, onSetName, onSetColor, onLeave })
+ *   new MenuShell({ palette, name, color, skin, onCommit, onSetName, onSetColor, onSetSkin, onLeave })
  *   mount()
  *   enterGame()
  *   returnToMenu()
@@ -22,16 +22,27 @@
  *   hideAll()
  *   get currentName()
  *   get currentColor()
+ *   get currentSkin()
+ *
+ *   onCommit fires with { create, code, name, color, skin, mode }.
+ *   onSetSkin(id) fires on bird-picker selection (id is one of the 7 skin ids).
  *
  * Visual language: "cinematic dark + neon" — a layered glass design SYSTEM
  * shared verbatim with the in-room lobby (lobbyUI.js) so the two read as one
  * product. Tokens are declared once as CSS custom properties on #flk2-root.
  */
 
+import { BIRDS } from '../flight/AvatarBird.js';
+
 const LS_NAME = 'flockd.name';
 const LS_COLOR = 'flockd.color';
+const LS_SKIN = 'flockd.skin';
 const STYLE_ID = 'flk2-style';
 const ROOT_ID = 'flk2-root';
+
+// Ordered list of selectable avatar ids (drives the locker bird picker).
+const SKIN_IDS = ['stork', 'celestial', 'phoenix', 'cardinal', 'pigeon', 'grey', 'bird'];
+const DEFAULT_SKIN = 'stork';
 
 const DEFAULT_PALETTE = [
   '#ff5a5f', '#3fa7ff', '#5ad469', '#ffd23f',
@@ -252,6 +263,21 @@ const CSS = `
 .flk2-sw.flk2-sel{transform:translateY(-3px) scale(1.1);
   box-shadow:0 0 0 2px rgba(7,11,22,1),0 0 0 4px rgba(255,255,255,.9),0 6px 18px var(--flk2-c)}
 
+/* bird / avatar picker (compact chip row in the locker) */
+.flk2-birds{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.flk2-birdchip{cursor:pointer;padding:7px 12px;border-radius:var(--flk2-radius-pill);
+  border:1px solid var(--flk2-line);background:var(--flk2-glass-2);color:var(--flk2-muted-2);
+  font-size:12px;font-weight:700;letter-spacing:.02em;line-height:1;outline:none;
+  transition:color var(--flk2-t),border-color var(--flk2-t),background var(--flk2-t),
+  transform 120ms var(--flk2-ease),box-shadow var(--flk2-t)}
+.flk2-birdchip:hover{color:#dbe6ff;transform:translateY(-1px);border-color:var(--flk2-line-strong);
+  background:rgba(139,123,255,.12)}
+.flk2-birdchip:active{transform:scale(.96)}
+.flk2-birdchip:focus-visible{box-shadow:0 0 0 2px var(--flk2-cyan)}
+.flk2-birdchip.flk2-sel{color:#06101f;border-color:transparent;
+  background:linear-gradient(135deg,var(--flk2-cyan),var(--flk2-violet));
+  box-shadow:0 6px 18px -6px rgba(84,224,255,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+
 /* action (right) */
 .flk2-action{width:min(456px,46vw);padding:26px 28px 28px;display:flex;flex-direction:column;gap:18px}
 .flk2-section{display:flex;flex-direction:column;gap:12px}
@@ -440,26 +466,32 @@ const CSS = `
 `;
 
 export class MenuShell {
-  constructor({ palette, name, color, onCommit, onSetName, onSetColor, onLeave } = {}) {
+  constructor({ palette, name, color, skin, onCommit, onSetName, onSetColor, onSetSkin, onLeave } = {}) {
     this.palette = (Array.isArray(palette) && palette.length === 8) ? palette.slice() : DEFAULT_PALETTE.slice();
     this.onCommit = typeof onCommit === 'function' ? onCommit : () => {};
     this.onSetName = typeof onSetName === 'function' ? onSetName : () => {};
     this.onSetColor = typeof onSetColor === 'function' ? onSetColor : () => {};
+    this.onSetSkin = typeof onSetSkin === 'function' ? onSetSkin : () => {};
     this.onLeave = typeof onLeave === 'function' ? onLeave : () => {};
 
     // resolve persisted defaults
     let storedName = null;
     let storedColor = null;
+    let storedSkin = null;
     try {
       storedName = localStorage.getItem(LS_NAME);
       const c = localStorage.getItem(LS_COLOR);
       if (c != null) storedColor = parseInt(c, 10);
+      storedSkin = localStorage.getItem(LS_SKIN);
     } catch (_) { /* localStorage may be unavailable */ }
 
     this._name = (name != null ? name : storedName) || '';
     let resolvedColor = (color != null ? color : storedColor);
     if (typeof resolvedColor !== 'number' || Number.isNaN(resolvedColor)) resolvedColor = 0;
     this._color = ((resolvedColor % 8) + 8) % 8;
+
+    let resolvedSkin = (skin != null ? skin : storedSkin);
+    this._skin = SKIN_IDS.includes(resolvedSkin) ? resolvedSkin : DEFAULT_SKIN;
 
     this._mode = 'creative';
     this._pendingCode = null;     // auto-generated code awaiting Create
@@ -476,6 +508,7 @@ export class MenuShell {
   // ---- public getters ----
   get currentName() { return this._name; }
   get currentColor() { return this._color; }
+  get currentSkin() { return this._skin; }
 
   // ---- escaping helpers (XSS-safe) ----
   _text(node, value) { node.textContent = value == null ? '' : String(value); }
@@ -555,6 +588,7 @@ export class MenuShell {
     this._mounted = true;
     this._syncBird();
     this._syncSwatches();
+    this._syncBirdChips();
 
     if (this._name) this.returnToMenu();
     else this._show('auth');
@@ -777,6 +811,34 @@ export class MenuShell {
     }
     swatchWrap.appendChild(swatches);
     locker.appendChild(swatchWrap);
+
+    // ---- BIRD / avatar picker (compact chip row) ----
+    const birdWrap = document.createElement('div');
+    birdWrap.className = 'flk2-swatch-wrap';
+    const birdLabel = document.createElement('div');
+    birdLabel.className = 'flk2-label';
+    birdLabel.textContent = 'Bird';
+    birdWrap.appendChild(birdLabel);
+
+    const birds = document.createElement('div');
+    birds.className = 'flk2-birds';
+    this.el.birdChips = {};
+    for (const id of SKIN_IDS) {
+      const chip = document.createElement('button');
+      chip.className = 'flk2-birdchip' + (id === this._skin ? ' flk2-sel' : '');
+      chip.type = 'button';
+      // BIRDS labels (XSS-safe via textContent), fall back to the id itself.
+      const label = (BIRDS[id] && BIRDS[id].label) || id;
+      chip.textContent = label;
+      chip.title = label;
+      chip.setAttribute('aria-label', `Bird ${label}`);
+      chip.addEventListener('click', () => this._selectSkin(id));
+      birds.appendChild(chip);
+      this.el.birdChips[id] = chip;
+    }
+    birdWrap.appendChild(birds);
+    locker.appendChild(birdWrap);
+
     body.appendChild(locker);
 
     // ---------------- ACTION (right) ----------------
@@ -880,6 +942,7 @@ export class MenuShell {
         code: this._pendingCode,
         name: this._name,
         color: this._color,
+        skin: this._skin,
         mode: this._mode,
       });
     });
@@ -925,6 +988,7 @@ export class MenuShell {
         code,
         name: this._name,
         color: this._color,
+        skin: this._skin,
         mode: this._mode,
       });
     };
@@ -1107,6 +1171,13 @@ export class MenuShell {
     this.onSetColor(this._color);
   }
 
+  _selectSkin(id) {
+    this._skin = SKIN_IDS.includes(id) ? id : DEFAULT_SKIN;
+    try { localStorage.setItem(LS_SKIN, this._skin); } catch (_) {}
+    this._syncBirdChips();
+    this.onSetSkin(this._skin);
+  }
+
   _selectMode(id) {
     this._mode = (id === 'survival') ? 'survival' : 'creative';
     for (const key of Object.keys(this.el.modeCards || {})) {
@@ -1133,6 +1204,13 @@ export class MenuShell {
     this.el.swatches.forEach((sw, i) => {
       sw.classList.toggle('flk2-sel', i === this._color);
     });
+  }
+
+  _syncBirdChips() {
+    if (!this.el.birdChips) return;
+    for (const id of Object.keys(this.el.birdChips)) {
+      this.el.birdChips[id].classList.toggle('flk2-sel', id === this._skin);
+    }
   }
 
   _refreshCallsign() {
@@ -1251,6 +1329,7 @@ export class MenuShell {
     this._refreshCallsign();
     this._syncBird();
     this._syncSwatches();
+    this._syncBirdChips();
     if (this.root) this.root.style.display = '';
     this._show('home');
   }
