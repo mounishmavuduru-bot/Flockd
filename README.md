@@ -98,8 +98,6 @@ Both use a cached system prompt and forced `tool_use` so responses are structure
 
 ## Credits and license
 
-Flight core, world rendering, and the tilt and pose controls are forked from [**pmmathias/birdybird**](https://github.com/pmmathias/birdybird). The repo is MIT (see [`LICENSE`](LICENSE)), with bundled third-party assets under their own terms:
-
 - Ocean3.js / Ocean4.js water — CC BY-NC-SA 3.0, non-commercial; an MIT Gerstner-wave fallback is included for commercial use
 - RedReddingtonForest — MIT
 - Three.js, lil-gui — MIT; MediaPipe Tasks Vision — Apache 2.0
