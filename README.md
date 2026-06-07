@@ -2,7 +2,8 @@
 
 Fly a bird with a real aerodynamic flight model, with everyone else in the same world, in real time. Flap your arms at your webcam to climb, or use the keyboard if you'd rather not.
 
-Live: https://flyflockd.vercel.app
+Live game: https://flyflockd.vercel.app
+Live AI dashboard (THE HUNT): https://flockd-hunt.vercel.app
 Repo: https://github.com/mounishmavuduru-bot/Flockd
 
 The whole backend is one SpacetimeDB module. There is no game server process, no REST API, no socket gateway. Clients connect straight to the database, and the database runs the simulation clock. The AI is not special either: it's another client that reads live rows and writes its decisions back as rows.
@@ -13,11 +14,13 @@ The whole backend is one SpacetimeDB module. There is no game server process, no
 - Keyboard
 - Device tilt on phones
 
-## Two modes
+## Three modes
 
 **Race.** The flock chases a ring course through a real place. Eight landmark maps ship as compressed GLB worlds served from Vercel Blob: Sydney Opera House, Niagara Falls, Himeji Castle, Christ the Redeemer, the Pantheon, Riomaggiore, the Ducal Palace, and the Indy 500.
 
-**Survival.** Battle royale. One Claude-driven predator hawk named Skraah hunts whoever is in the lead and fires sabotage at them: wing-clip, fog, headwind. The point is to keep the pack bunched up so nobody runs away with it. If the hawk is on you, you can spend feathers on a **Feather Tithe** to buy a few seconds of mercy.
+**Survival.** Battle royale. A trio of Claude-driven hunters, led by Skraah, runs down whoever is in the lead and fires sabotage at them: wing-clip, fog, headwind. The point is to keep the pack bunched up so nobody runs away with it. If the hunters are on you, you can spend feathers on a **Feather Tithe** to buy a few seconds of mercy.
+
+**Creative.** Players co-author the world. Everyone drops a prompt in the lobby, Claude fuses them into one playable course and palette, and the flock races the level it just described. The worlds in Race and Survival are fixed landmarks; Creative is the mode where the level itself comes out of the model.
 
 ## Why the architecture is unusual
 
@@ -25,7 +28,7 @@ The pitch in one sentence: a SpacetimeDB 2.4.0 TypeScript module is the only bac
 
 ### The AI is just another database client
 
-Skraah's decisions and the live commentary are normal synced rows. A client subscribing to the database cannot tell an AI-written row from a player-written one. There is no API sitting between the game and the model, so there is nothing to keep in sync, version, or fall out of sync. The "integration surface" is the schema.
+The hunters' decisions and the live commentary are normal synced rows. A client subscribing to the database cannot tell an AI-written row from a player-written one. There is no API sitting between the game and the model, so there is nothing to keep in sync, version, or fall out of sync. The "integration surface" is the schema.
 
 ### An LLM inside the gameplay loop
 
@@ -34,6 +37,10 @@ Every 2.5 seconds, Claude reads the live `player` rows (positions, scores) and d
 ### The hawk's log is its own next prompt
 
 The `director_log` table holds the hawk's running history of decisions. That same table is the source for the dashboard's feed *and* the model's working memory: each call gets fed the recent log back as context. It's event-sourced agent memory with no vector store and no separate memory service. The database row is the memory.
+
+### Claude co-authors the level in Creative mode
+
+In Creative mode the course itself comes from the model. Players submit prompt fragments into `lobby_prompt`, the sidecar fuses them, and Claude returns a level config (palette plus a flyable 8-16 ring course) through forced tool use. The result is written to `world_config` like any other world, so the same client code renders a Claude-built course and a fixed landmark course without knowing the difference. Race and Survival submit no prompts, so they stay on the free deterministic generator; only Creative spends a Claude call.
 
 ### Live commentary the LLM computes from rows it never wrote
 
@@ -45,7 +52,7 @@ Paying the tithe is a single ACID reducer. It spends feathers and credits a capp
 
 ### A read-only dashboard whose only backend is the database
 
-`dashboard.html` is a standalone client called THE HUNT. It calls zero reducers. It subscribes to the AI's output rows and renders Claude's reasoning, a Canvas radar of the flock and the hawk, and a sabotage timeline. No endpoint, no extra service, just a subscription to the same tables. The database is the entire backend for a live ops dashboard.
+`dashboard.html` is a standalone client called THE HUNT, deployed on its own at [flockd-hunt.vercel.app](https://flockd-hunt.vercel.app). It calls zero reducers. It subscribes to the AI's output rows and renders Claude's reasoning, a Canvas radar of the flock and the hunters, and a sabotage timeline. No endpoint, no extra service, just a subscription to the same tables. A second site with no backend of its own watches the model think in real time.
 
 ### The scheduled tick is the world's heartbeat
 

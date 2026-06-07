@@ -1,7 +1,8 @@
 # FLOCKD — submission
 
 **Track:** SpacetimeDB × Claude
-**Live:** https://flyflockd.vercel.app
+**Live game:** https://flyflockd.vercel.app
+**Live AI dashboard (THE HUNT):** https://flockd-hunt.vercel.app
 **Repo:** https://github.com/mounishmavuduru-bot/Flockd
 **Demo video script + shot cues:** [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)
 
@@ -17,22 +18,23 @@ Flap your arms, fly a bird, and outrun a Claude-driven hawk.
 
 ## Short description (≈50 words)
 
-FLOCKD is a multiplayer 3D bird-flight game with a real aerodynamic model, flown by webcam arm-flapping or keyboard. Race a flock through real landmark worlds, or survive a predator hawk that Claude controls by reading live game rows straight out of SpacetimeDB and writing its attacks back as ordinary synced data.
+FLOCKD is a multiplayer 3D bird-flight game with a real aerodynamic model, flown by webcam arm-flapping or keyboard. Race a flock through real landmark worlds, survive a trio of hunters that Claude controls by reading live game rows straight out of SpacetimeDB and writing its attacks back as ordinary synced data, or jump into Creative mode where Claude builds the course from the players' own prompts.
 
 ## Full description
 
 FLOCKD is a multiplayer bird-flight game. You fly a real aerodynamic model, together or against other players in real time, by flapping your arms at a webcam (MediaPipe pose) or with keyboard and device tilt.
 
-Two modes. RACE sends the whole flock around a ring course through real places — Sydney Opera House, Niagara Falls, Himeji Castle, eight Sketchfab landmark worlds in all. SURVIVAL is a battle royale stalked by one Claude-driven hawk named Skraah, who hunts the leader and fires sabotage (wing-clip, fog, headwind) to keep the pack tight. You spend feathers on a Feather Tithe to buy its mercy, and that mercy decays every tick.
+Three modes. RACE sends the whole flock around a ring course through real places — Sydney Opera House, Niagara Falls, Himeji Castle, eight Sketchfab landmark worlds in all. SURVIVAL is a battle royale stalked by a trio of Claude-driven hunters led by Skraah, who run down the leader and fire sabotage (wing-clip, fog, headwind) to keep the pack tight. You spend feathers on a Feather Tithe to buy their mercy, and that mercy decays every tick. CREATIVE lets the players write the world: everyone drops a prompt in the lobby, Claude fuses them into one playable course and palette, and the flock races the level it just described.
 
-Here's the part I'm proud of: the AI is just another database client. A small sidecar holds the Claude key, subscribes to live player positions and scores, calls Haiku 4.5 every 2.5 seconds, and writes the hawk's decisions back as plain synced rows. No API sits between the game and the model. Players can't tell an AI row from a human one. The hawk's own decision log is fed back as its next prompt, so one table is both the spectator feed and the model's memory. A second Claude agent reads rows it never wrote and calls the live race like an esports caster. A separate dashboard renders all of it by subscribing to those rows and calling zero reducers. The database is the whole interface.
+Here's the part I'm proud of: the AI is just another database client. A small sidecar holds the Claude key, subscribes to live player positions and scores, calls Haiku 4.5 every 2.5 seconds, and writes the hunters' decisions back as plain synced rows. No API sits between the game and the model. Players can't tell an AI row from a human one. The hunters' own decision log is fed back as the next prompt, so one table is both the spectator feed and the model's memory. A second Claude agent reads rows it never wrote and calls the live race like an esports caster. A separate dashboard, deployed on its own at flockd-hunt.vercel.app, renders all of it by subscribing to those rows and calling zero reducers. The database is the whole interface.
 
 ## How we used SpacetimeDB and Claude
 
 The full write-up with code references is in the [README](README.md#why-the-architecture-is-unusual). The short version:
 
-- **The AI is just another DB client.** The hawk's moves and the live commentary are synced rows, identical in shape to player rows. There is no REST or socket API between the game and the model.
-- **An LLM in the gameplay loop.** Claude reads live `player` rows every 2.5s and decides who to hunt and what sabotage to fire, then writes the decision back through sidecar-gated reducers.
+- **The AI is just another DB client.** The hunters' moves and the live commentary are synced rows, identical in shape to player rows. There is no REST or socket API between the game and the model.
+- **An LLM in the gameplay loop.** Claude reads live `player` rows every 2.5s and decides who to hunt and what sabotage to fire, then writes the decision back through sidecar-gated reducers. The on-screen trio flies in formation off that one director brain.
+- **Claude co-authors the world (Creative mode).** Players' lobby prompts go into `lobby_prompt`; Claude fuses them into a level config and writes it to `world_config`, which the same client renders as a normal course. Race and Survival submit no prompts and stay on the free deterministic generator.
 - **The hawk's log is its own next prompt.** `director_log` is both the dashboard's history feed and the model's working memory — event-sourced agent memory with no external store.
 - **Commentary from rows the model never wrote.** A second Claude agent names the real leader and the real gap every 3.5s. Move a player in raw SQL and the next line tracks it, which is the proof it's reading the DB, not a script.
 - **Atomic Feather Tithe economy.** One ACID reducer spends feathers and credits a capped favor ledger; a per-tick decay sweep keeps mercy temporary. No dupes by construction.

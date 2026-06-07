@@ -857,7 +857,8 @@ export class MenuShell {
     this.el.modeCards = {};
     const defs = [
       { id: 'race', icon: '🏁', name: 'RACE', desc: 'First to finish the course wins.' },
-      { id: 'survival', icon: ICON.skull, name: 'SURVIVAL', desc: 'Outfly the hunt — an AI predator stalks the leader.' },
+      { id: 'survival', icon: ICON.skull, name: 'SURVIVAL', desc: 'Outfly the hunt — a trio of AI hunters stalks the leader.' },
+      { id: 'creative', icon: '🎨', name: 'CREATIVE', desc: 'Co-author the world from a prompt; Claude builds the course.' },
     ];
     for (const d of defs) {
       const card = document.createElement('button');
@@ -884,6 +885,27 @@ export class MenuShell {
       this.el.modeCards[d.id] = card;
     }
     modeSec.appendChild(modes);
+
+    // CREATIVE prompt — only shown when the Creative mode card is selected. The
+    // text is submitted to the room after join; the AI sidecar fuses every
+    // player's prompt and Claude builds the course.
+    const promptWrap = document.createElement('div');
+    promptWrap.className = 'flk2-prompt-wrap';
+    promptWrap.style.cssText = 'margin-top:10px;display:' + (this._mode === 'creative' ? 'block' : 'none') + ';';
+    const promptInput = document.createElement('textarea');
+    promptInput.className = 'flk2-input';
+    promptInput.rows = 2;
+    promptInput.maxLength = 140;
+    promptInput.placeholder = 'Describe the world… "stormy pirate cove at dusk"';
+    promptInput.autocomplete = 'off';
+    promptInput.spellcheck = false;
+    promptInput.style.cssText = 'width:100%;resize:none;font-family:inherit;';
+    promptInput.addEventListener('keydown', (e) => e.stopPropagation());
+    promptWrap.appendChild(promptInput);
+    modeSec.appendChild(promptWrap);
+    this.el.creativePromptWrap = promptWrap;
+    this.el.creativePrompt = promptInput;
+
     action.appendChild(modeSec);
 
     action.appendChild(this._divider());
@@ -943,6 +965,7 @@ export class MenuShell {
         color: this._color,
         skin: this._skin,
         mode: this._mode,
+        prompt: this._creativePromptText(),
       });
     });
     this.el.createBtn = createBtn;
@@ -989,6 +1012,7 @@ export class MenuShell {
         color: this._color,
         skin: this._skin,
         mode: this._mode,
+        prompt: this._creativePromptText(),
       });
     };
     goBtn.addEventListener('click', doJoin);
@@ -1178,10 +1202,19 @@ export class MenuShell {
   }
 
   _selectMode(id) {
-    this._mode = (id === 'survival') ? 'survival' : 'race';
+    this._mode = (id === 'survival') ? 'survival' : (id === 'creative' ? 'creative' : 'race');
     for (const key of Object.keys(this.el.modeCards || {})) {
       this.el.modeCards[key].classList.toggle('flk2-sel', key === this._mode);
     }
+    if (this.el.creativePromptWrap) {
+      this.el.creativePromptWrap.style.display = (this._mode === 'creative') ? 'block' : 'none';
+    }
+  }
+
+  /** The creative-mode world prompt (empty unless Creative is selected). */
+  _creativePromptText() {
+    if (this._mode !== 'creative' || !this.el.creativePrompt) return '';
+    return this.el.creativePrompt.value.trim().slice(0, 140);
   }
 
   _syncBird() {
@@ -1379,9 +1412,10 @@ export class MenuShell {
     this._text(this.el.waitCode, safeCode);
     // mode pill: crisp glyph + label (textContent for the label, XSS-safe)
     if (this.el.waitMode) {
-      this.el.waitMode.innerHTML = (mode === 'survival') ? ICON.skull : '🏁';
+      this.el.waitMode.innerHTML = (mode === 'survival') ? ICON.skull : (mode === 'creative' ? '🎨' : '🏁');
       const ml = document.createElement('span');
-      ml.textContent = (mode === 'survival') ? 'Survival — outfly the hunt' : 'Race — first to finish';
+      ml.textContent = (mode === 'survival') ? 'Survival — outfly the hunt'
+        : (mode === 'creative' ? 'Creative — Claude builds your world' : 'Race — first to finish');
       this.el.waitMode.appendChild(ml);
     }
 

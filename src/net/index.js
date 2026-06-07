@@ -142,14 +142,39 @@ export class NetClient {
   }
 
   // ---- reducer wrappers ----
-  join({ code, name, mode, color, skin }) {
+  join({ code, name, mode, color, skin, prompt }) {
     this.mode = mode || this.mode;
     if (typeof color === 'number') this.color = color % 8;
     if (typeof skin === 'string' && skin) this.skin = skin;
-    if (this.mode === 'race' && !this.course) this.course = new RingCourse(this.scene);
+    // Creative renders the same ring course as race (Claude builds it instead of the seed).
+    if ((this.mode === 'race' || this.mode === 'creative') && !this.course) this.course = new RingCourse(this.scene);
     if (this.mode === 'survival' && !this._survInit && this.connected) this._initSurvival();
-    if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color, skin: this.skin }; return; }
+    if (this.mode === 'creative' && typeof prompt === 'string' && prompt.trim()) {
+      this._creativePrompt = prompt.trim().slice(0, 140);
+    }
+    if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color, skin: this.skin, prompt }; return; }
     this.conn.reducers.joinRoom({ code, name, mode, color: this.color, skin: this.skin });
+    if (this._creativePrompt) this._schedulePromptSubmit();
+  }
+
+  /**
+   * Submit the creative prompt once we're actually in a lobby room. joinRoom
+   * round-trips before the player's row reflects the room, so retry briefly.
+   */
+  _schedulePromptSubmit() {
+    let tries = 0;
+    const tryOnce = () => {
+      if (!this._creativePrompt) return;
+      const r = this._myRow();
+      const room = r && r.roomId !== 0n ? this._room(r.roomId) : null;
+      if (room && room.state === 'lobby') {
+        this.submitPrompt(this._creativePrompt);
+        this._creativePrompt = '';
+        return;
+      }
+      if (++tries < 30) setTimeout(tryOnce, 200); // up to ~6s
+    };
+    setTimeout(tryOnce, 250);
   }
 
   /**
@@ -172,6 +197,12 @@ export class NetClient {
     console.log('[net] survival initialized');
   }
 
+  /** Creative mode: submit/replace this player's world prompt fragment (lobby only). */
+  submitPrompt(text) {
+    if (this.connected && typeof text === 'string' && text.trim()) {
+      this.conn.reducers.submitPrompt({ text: text.trim().slice(0, 140) });
+    }
+  }
   setName(name) { if (this.connected) this.conn.reducers.setName({ name }); }
   setColor(color) { this.color = color % 8; if (this.connected) this.conn.reducers.setColor({ color: this.color }); }
   setSkin(id) { if (typeof id === 'string' && id) this.skin = id; if (this.connected) this.conn.reducers.setSkin({ skin: this.skin }); }
@@ -256,8 +287,9 @@ export class NetClient {
     }
     this.remote.reconcile(remoteRows, dt, camera);
 
-    // 3) Race mode: apply the synced world + course, report finishes (no predator).
-    if (this.mode === 'race') this._driveRace(room, roster, dt, camera);
+    // 3) Race / Creative: apply the synced world + course, report finishes (no predator).
+    //    Creative is mechanically a race; only the course author differs (Claude vs seed).
+    if (this.mode === 'race' || this.mode === 'creative') this._driveRace(room, roster, dt, camera);
     // 3b) Survival mode: predator render, course, sabotage FX, elimination.
     if (this.mode === 'survival') this._driveSurvival(room, roster, dt, camera);
 

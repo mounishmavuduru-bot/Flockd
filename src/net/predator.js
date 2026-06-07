@@ -1,59 +1,82 @@
 /**
- * Renders the survival-mode predator hawk from the synced `predator` row.
+ * Renders the survival-mode hunt as a TRIO of hunters flying off the single
+ * synced `predator` row.
  *
- * Reuses the same BirdModel the players use, but scaled up ~1.8x and tinted
- * dark/red so it reads as menacing. Position + yaw are interpolated with the
- * same exponential smoothing approach RemoteBirds uses, so the predator glides
- * between the sidecar's ~6 Hz steering snapshots → smooth at 60 fps.
+ * One director brain drives one predator transform (position + yaw). We render
+ * three hunter models in a yaw-aligned V around that transform: a lead and two
+ * wingmen. They share the brain — sabotage, collisions, and the radar all key
+ * off the center transform (`getPosition()`), so this is purely how the hunt
+ * LOOKS, not how it decides. That keeps the trio a client-only change with no
+ * schema or sidecar work.
  *
- * The predator is hidden whenever there is no active predator row (e.g. the
- * room hasn't spawned one yet, or it's been despawned / marked inactive).
+ * Each hunter reuses the player BirdModel scaled up and tinted dark/red. To drop
+ * in real hunter art later, give each formation slot its own GLB: load it in the
+ * constructor instead of `new BirdModel(scene)` and keep the per-slot state.
+ *
+ * The trio is hidden whenever there is no active predator row.
  */
 import * as THREE from 'three';
 import { BirdModel } from '../flight/BirdModel.js';
 import { FLIGHT_MODE } from '../constants.js';
 
 const PREDATOR_SCALE = 1.8;
-const TINT = new THREE.Color(0x1a0608);   // near-black body
+const TINT = new THREE.Color(0x1a0608);     // near-black body
 const EMISSIVE = new THREE.Color(0xb01818); // angry red glow
+
+// Formation slots in (right, up, forward) units relative to the flight heading.
+// Lead sits slightly ahead; the two wingmen trail and flank. Flap phases are
+// offset so the three don't beat in lockstep.
+const SLOTS = [
+  { right: 0, up: 0, fwd: 24, scale: 1.0, flap: 0.0 },    // lead
+  { right: -34, up: -5, fwd: -20, scale: 0.9, flap: 0.33 }, // left wing
+  { right: 34, up: 5, fwd: -20, scale: 0.9, flap: 0.66 },   // right wing
+];
 
 export class Predator {
   constructor(scene) {
     this.scene = scene;
-    this.model = new BirdModel(scene);
-    this._tinted = false;
-    this._scaled = false;
-    this._visible = false;
 
-    // Smoothed position + yaw (exp lerp, mirrors RemoteBirds / BirdModel).
+    // Smoothed center transform (exp lerp, mirrors RemoteBirds / BirdModel).
     this._pos = new THREE.Vector3(0, 80, 0);
     this._yaw = Math.PI;
     this._initialized = false;
+    this._visible = false;
 
-    // Proxy "flight state" consumed by BirdModel.update (same shape RemoteBird uses).
-    this.state = {
-      position: this._pos,
-      forward: new THREE.Vector3(0, 0, -1),
-      up: new THREE.Vector3(0, 1, 0),
-      right: new THREE.Vector3(1, 0, 0),
-      yaw: Math.PI, pitch: 0, roll: 0,
-      speed: 0,
-      mode: FLIGHT_MODE.FLYING,
-      flapPhase: 0,
-      wingSpread: 1,
-      landingTimer: 0,
-    };
+    // Reusable basis vectors (rebuilt from yaw each frame).
+    this._fwd = new THREE.Vector3(0, 0, -1);
+    this._right = new THREE.Vector3(1, 0, 0);
+    this._up = new THREE.Vector3(0, 1, 0);
+
+    // One hunter per slot, each with its own model + proxy flight state.
+    this.hunters = SLOTS.map((slot) => ({
+      slot,
+      model: new BirdModel(scene),
+      scaled: false,
+      tinted: false,
+      state: {
+        position: new THREE.Vector3(0, 80, 0),
+        forward: new THREE.Vector3(0, 0, -1),
+        up: new THREE.Vector3(0, 1, 0),
+        right: new THREE.Vector3(1, 0, 0),
+        yaw: Math.PI, pitch: 0, roll: 0,
+        speed: 0,
+        mode: FLIGHT_MODE.FLYING,
+        flapPhase: 0,
+        wingSpread: 1,
+        landingTimer: 0,
+      },
+    }));
   }
 
-  /** Scale the loaded model up + apply a dark/red material tint (clone, like remoteBirds). */
-  _applyLook() {
-    if (!this.model._loaded || !this.model._model) return;
-    if (!this._scaled) {
-      this.model._model.scale.multiplyScalar(PREDATOR_SCALE);
-      this._scaled = true;
+  /** Scale up + apply the dark/red tint to a hunter's loaded model (once). */
+  _applyLook(h) {
+    if (!h.model._loaded || !h.model._model) return;
+    if (!h.scaled) {
+      h.model._model.scale.multiplyScalar(PREDATOR_SCALE * h.slot.scale);
+      h.scaled = true;
     }
-    if (this._tinted) return;
-    this.model._model.traverse((child) => {
+    if (h.tinted) return;
+    h.model._model.traverse((child) => {
       if (child.isMesh && child.material) {
         child.material = child.material.clone();
         if (child.material.color) child.material.color.copy(TINT);
@@ -64,23 +87,23 @@ export class Predator {
         child.material.needsUpdate = true;
       }
     });
-    this._tinted = true;
+    h.tinted = true;
   }
 
   _setVisible(v) {
     if (this._visible === v) return;
     this._visible = v;
-    if (this.model._model) this.model._model.visible = v;
+    for (const h of this.hunters) if (h.model._model) h.model._model.visible = v;
   }
 
   /**
-   * Reconcile against the latest predator row.
+   * Reconcile the trio against the latest predator row.
    * @param {object|null} row  the synced predator row for my room (or null/inactive)
    * @param {number} dt
    * @param {THREE.Camera} camera
    */
   reconcile(row, dt, camera) {
-    this._applyLook();
+    for (const h of this.hunters) this._applyLook(h);
 
     if (!row || !row.active) {
       this._setVisible(false);
@@ -97,33 +120,47 @@ export class Predator {
       this._initialized = true;
     }
 
-    // Exponential smoothing (same form as BirdModel/RemoteBirds: 1 - e^(-k·dt)).
+    // Exponential smoothing of the center (same form as BirdModel/RemoteBirds).
     const rate = 1 - Math.exp(-5.0 * dt);
     this._pos.lerp(targetPos, rate);
 
-    // Shortest-arc yaw interpolation.
     let dyaw = targetYaw - this._yaw;
     while (dyaw > Math.PI) dyaw -= 2 * Math.PI;
     while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
     this._yaw += dyaw * rate;
 
-    const s = this.state;
-    s.yaw = this._yaw;
-    s.speed = row.speed;
-    s.forward.set(-Math.sin(this._yaw), 0, -Math.cos(this._yaw)).normalize();
-    // Always flap hard so it reads as an active, beating-winged hunter.
-    s.flapPhase = 1; s.wingSpread = 1;
+    // Rebuild the heading basis once for the whole formation.
+    this._fwd.set(-Math.sin(this._yaw), 0, -Math.cos(this._yaw)).normalize();
+    this._right.set(Math.cos(this._yaw), 0, -Math.sin(this._yaw)).normalize();
 
-    this.model.update(s, dt, camera);
+    const tNow = performance.now() / 1000;
+    for (const h of this.hunters) {
+      const s = h.state;
+      // World position = center + right*r + up*u + forward*f.
+      s.position.copy(this._pos)
+        .addScaledVector(this._right, h.slot.right)
+        .addScaledVector(this._up, h.slot.up)
+        .addScaledVector(this._fwd, h.slot.fwd);
+      s.yaw = this._yaw;
+      s.speed = row.speed;
+      s.forward.copy(this._fwd);
+      s.right.copy(this._right);
+      // Beating wings, slightly out of phase per slot so the trio looks alive.
+      s.flapPhase = 1;
+      s.wingSpread = 0.92 + 0.08 * Math.sin((tNow + h.slot.flap) * 6.0);
+      h.model.update(s, dt, camera);
+    }
   }
 
-  /** Smoothed world position of the predator (THREE.Vector3). */
+  /** Smoothed world position of the hunt center (THREE.Vector3). */
   getPosition() {
     return this._pos;
   }
 
   dispose() {
-    if (this.model && this.model._model) this.scene.remove(this.model._model);
-    if (this.model && this.model._mixer) this.model._mixer.stopAllAction?.();
+    for (const h of this.hunters) {
+      if (h.model && h.model._model) this.scene.remove(h.model._model);
+      if (h.model && h.model._mixer) h.model._mixer.stopAllAction?.();
+    }
   }
 }

@@ -487,11 +487,11 @@ if (roomCode) {
     onSetName: (n) => net.setName(n),
     onSetColor: (c) => net.setColor(c),
     onSetSkin: (id) => net.setSkin(id),
-    onCommit: ({ code, name, color, mode, skin }) => {
+    onCommit: ({ code, name, color, mode, skin, prompt }) => {
       net.setName(name);
       net.setColor(color);
       if (skin) net.setSkin(skin);
-      net.join({ code, name, mode, color, skin });
+      net.join({ code, name, mode, color, skin, prompt });
       try { if (skin) localStorage.setItem('flockd.skin', skin); } catch (_) {}
       shell.showConnecting(`Entering ${String(code).toUpperCase()}…`);
     },
@@ -565,7 +565,7 @@ if (roomCode) {
     // Both modes use the same flow: MenuShell waiting room until 'playing'.
     const waiting = info.roomState !== 'playing';
     if (waiting) {
-      const mode = info.mode === 'survival' ? 'survival' : 'race';
+      const mode = info.mode === 'survival' ? 'survival' : (info.mode === 'creative' ? 'creative' : 'race');
       if (uiState !== 'waiting') {
         shell.showWaitingRoom({
           code: info.roomCode, mode, isHost: info.isHost,
