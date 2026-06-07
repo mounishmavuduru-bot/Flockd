@@ -58,6 +58,7 @@ export class NetClient {
 
     // Creative mode
     this.mode = null;
+    this.color = 0;
     this.lobby = null;
     this.course = null;
     this.worldApplied = false;
@@ -91,11 +92,12 @@ export class NetClient {
   }
 
   // ---- reducer wrappers ----
-  join({ code, name, mode }) {
+  join({ code, name, mode, color }) {
     this.mode = mode || this.mode;
+    if (typeof color === 'number') this.color = color % 8;
     if (this.mode === 'creative' && !this.lobby) this._initCreative();
-    if (!this.connected) { this._pendingJoin = { code, name, mode }; return; }
-    this.conn.reducers.joinRoom({ code, name, mode });
+    if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color }; return; }
+    this.conn.reducers.joinRoom({ code, name, mode, color: this.color });
   }
 
   _initCreative() {
@@ -106,6 +108,7 @@ export class NetClient {
   }
 
   setName(name) { if (this.connected) this.conn.reducers.setName({ name }); }
+  setColor(color) { this.color = color % 8; if (this.connected) this.conn.reducers.setColor({ color: this.color }); }
   startGame() { if (this.connected) this.conn.reducers.startGame({}); }
   startBuild() { if (this.connected) this.conn.reducers.startBuild(); }
   leave() { if (this.connected) this.conn.reducers.leaveRoom({}); }
@@ -159,7 +162,8 @@ export class NetClient {
       for (const r of this.conn.db.player.iter()) {
         if (r.roomId !== this.myRoomId || !r.online) continue;
         const me = r.identity.toHexString() === this.identityHex;
-        roster.push({ name: r.name, color: r.color, me });
+        const host = !!(room && room.host.toHexString() === r.identity.toHexString());
+        roster.push({ name: r.name, color: r.color, me, host });
         if (!me) remoteRows.push(r);
       }
     }
@@ -179,6 +183,7 @@ export class NetClient {
         mode: room ? room.mode : null,
         isHost,
         players: roster.length,
+        roster,
       });
     }
   }

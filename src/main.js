@@ -27,6 +27,7 @@ import { NestQuestUI } from './game/NestQuestUI.js';
 import { getBiomeForLevel, applyBiome } from './world/Biomes.js';
 import { SoundFX } from './audio/SoundFX.js';
 import { NetClient } from './net/index.js';
+import { MenuShell } from './shell/MenuShell.js';
 // Mobile imports — MobileInput class stays lazy, but detect mobile synchronously
 // so desktop-only init (ringRush.start, initWebcam) doesn't fire on iPhones.
 let MobileInput, MobileUI;
@@ -115,6 +116,11 @@ console.log(`Spawn height: ${flightState.position.y.toFixed(0)}m (terrain max ne
 // ?x=100&z=200&y=20&yaw=1.5 → positions bird
 // ?skipcalib=1 → auto-applies default mobile calibration (bypass wizard)
 const urlParams = new URLSearchParams(location.search);
+// No ?room= → boot the FLOCKD menu shell (the default single-site product flow:
+// auth → locker → create/join → world → leave → repeat). ?room= keeps the
+// direct-join fast path for testing/automation.
+const roomCode = urlParams.get('room');
+const useShell = !roomCode;
 if (urlParams.has('x')) flightState.position.x = parseFloat(urlParams.get('x'));
 if (urlParams.has('y')) flightState.position.y = parseFloat(urlParams.get('y'));
 if (urlParams.has('z')) flightState.position.z = parseFloat(urlParams.get('z'));
@@ -204,7 +210,9 @@ document.addEventListener('keydown', unlockAudio);
 
 // --- Game mode selection ---
 // ?game=nest (default) | ringrush | free
-const gameMode = urlParams.get('game') || 'nest';
+// In shell mode the single-player quests are off — the world is just a calm
+// attract backdrop behind the menu until the player enters a multiplayer room.
+const gameMode = urlParams.get('game') || (useShell ? 'free' : 'nest');
 
 let ringRush = null;
 let ringRushUI = null;
@@ -344,17 +352,20 @@ window.__cameraRig = cameraRig;
 // Two tabs with the same ?room= see each other's storks in real time.
 // Press G to start the match as host (resets everyone + scoring).
 let net = null;
-const roomCode = urlParams.get('room');
+let shell = null;
+
 if (roomCode) {
+  // ---- Fast path (testing/automation): direct join from URL params, no menu. ----
   const playerName = urlParams.get('name') || `Bird${Math.floor(Math.random() * 1000)}`;
   const mpMode = urlParams.get('mp') === 'survival' ? 'survival' : 'creative';
+  const mpColor = parseInt(urlParams.get('color'), 10) || 0;
   net = new NetClient({
     scene,
     localState: flightState,
     onState: (info) => { window.__netState = info; },
   });
   net.connect();
-  net.join({ code: roomCode, name: playerName, mode: mpMode });
+  net.join({ code: roomCode, name: playerName, mode: mpMode, color: mpColor });
   window.__net = net;
   window.addEventListener('keydown', (e) => {
     if (e.key === 'g' || e.key === 'G') {
@@ -362,6 +373,84 @@ if (roomCode) {
     }
   });
   console.log(`[net] joining room "${roomCode}" as ${playerName} (${mpMode})`);
+} else {
+  // ---- Default product flow: the FLOCKD menu shell drives everything. ----
+  const FLOCK_PALETTE = ['#ff5a5f', '#3fa7ff', '#5ad469', '#ffd23f', '#b06bff', '#ff8c42', '#2ec4b6', '#f15bb5'];
+  const savedName = (() => { try { return localStorage.getItem('flockd.name'); } catch { return null; } })();
+  const savedColor = (() => { try { return parseInt(localStorage.getItem('flockd.color'), 10) || 0; } catch { return 0; } })();
+
+  net = new NetClient({ scene, localState: flightState, onState: handleNetState });
+  shell = new MenuShell({
+    palette: FLOCK_PALETTE,
+    name: savedName,
+    color: savedColor,
+    onSetName: (n) => net.setName(n),
+    onSetColor: (c) => net.setColor(c),
+    onCommit: ({ code, name, color, mode }) => {
+      net.setName(name);
+      net.setColor(color);
+      net.join({ code, name, mode, color });
+      shell.showConnecting(`Entering ${String(code).toUpperCase()}…`);
+    },
+    onLeave: () => { net.leave(); },
+  });
+  shell.mount();
+  const shellRoot = document.getElementById('flk2-root');
+  if (shellRoot) shellRoot.style.zIndex = '2600'; // above all in-game chrome
+  net.connect();
+  window.__net = net;
+  window.__shell = shell;
+
+  // In-game "Leave" affordance — exit a room back to the menu (exit → repeat).
+  const leaveBtn = document.createElement('button');
+  leaveBtn.textContent = '‹ Leave';
+  leaveBtn.style.cssText = [
+    'position:fixed', 'top:12px', 'left:12px', 'z-index:1200', 'display:none',
+    'padding:8px 14px', 'border-radius:999px', 'cursor:pointer',
+    'font:600 13px system-ui,sans-serif', 'color:#eaf2ff',
+    'background:rgba(12,18,32,.7)', '-webkit-backdrop-filter:blur(8px)',
+    'backdrop-filter:blur(8px)', 'border:1px solid rgba(120,150,220,.35)',
+  ].join(';');
+  leaveBtn.addEventListener('click', () => net.leave());
+  document.body.appendChild(leaveBtn);
+
+  // Dev shortcut: host start/forge (the shell + in-room lobby are the real controls).
+  window.addEventListener('keydown', (e) => {
+    if ((e.key === 'g' || e.key === 'G') && net.myRoomId !== 0n) {
+      if (net.mode === 'creative') net.startBuild(); else net.startGame();
+    }
+  });
+
+  // React to room-state changes to move between menu / waiting-room / world.
+  let uiState = 'menu';
+  let wasInRoom = false;
+  function handleNetState(info) {
+    if (!shell) return;
+    shell.setConnected(info.connected);
+    leaveBtn.style.display = info.inRoom ? 'block' : 'none';
+    if (!info.inRoom) {
+      if (wasInRoom) { shell.returnToMenu(); wasInRoom = false; uiState = 'menu'; }
+      return;
+    }
+    wasInRoom = true;
+    const survivalWaiting = info.mode === 'survival' && info.roomState !== 'playing';
+    if (survivalWaiting) {
+      if (uiState !== 'waiting') {
+        shell.showWaitingRoom({
+          code: info.roomCode, mode: 'survival', isHost: info.isHost,
+          roster: info.roster || [], onStart: () => net.startGame(),
+        });
+        uiState = 'waiting';
+      } else {
+        shell.setRoster(info.roster || []);
+      }
+    } else if (uiState !== 'ingame') {
+      // Creative lobby is handled by the in-room LobbyUI; survival 'playing' →
+      // reveal the world. Either way, drop the menu overlay.
+      shell.enterGame();
+      uiState = 'ingame';
+    }
+  }
 }
 window.__startAutopilot = (seq) => {
   if (!flightMode) {

@@ -219,8 +219,8 @@ export const setName = spacetimedb.reducer({ name: t.string() }, (ctx, { name })
  * Creator becomes host and picks the mode.
  */
 export const joinRoom = spacetimedb.reducer(
-  { code: t.string(), name: t.string(), mode: t.string() },
-  (ctx, { code, name, mode }) => {
+  { code: t.string(), name: t.string(), mode: t.string(), color: t.u32() },
+  (ctx, { code, name, mode, color }) => {
     const p = ctx.db.player.identity.find(ctx.sender);
     if (!p) throw new Error('no player row');
 
@@ -243,12 +243,20 @@ export const joinRoom = spacetimedb.reducer(
       r = ctx.db.room.id.find(id)!;
     }
 
-    // Assign a color = current player count (mod palette size).
-    const color = r.playerCount % 8;
-    spawnPlayerInto(ctx, p, r.id, name, color);
+    // Player picks their own color in the locker (0..7). Fall back to a
+    // seat-based color if an out-of-range value somehow arrives.
+    const colorIdx = Number.isFinite(color) ? color % 8 : r.playerCount % 8;
+    spawnPlayerInto(ctx, p, r.id, name, colorIdx);
     ctx.db.room.id.update({ ...r, playerCount: r.playerCount + 1 });
   }
 );
+
+/** Change bird color from the locker while in the menu (or between matches). */
+export const setColor = spacetimedb.reducer({ color: t.u32() }, (ctx, { color }) => {
+  const p = ctx.db.player.identity.find(ctx.sender);
+  if (!p) throw new Error('no player row');
+  ctx.db.player.identity.update({ ...p, color: color % 8, updatedAt: ctx.timestamp });
+});
 
 /** Leave the current room (back to menu). */
 export const leaveRoom = spacetimedb.reducer((ctx) => {

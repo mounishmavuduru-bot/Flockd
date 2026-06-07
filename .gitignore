@@ -11,6 +11,9 @@ server/target/
 
 # stray plugin artifacts
 ruvector.db
+agentdb.rvf
+agentdb.rvf.lock
+_probe_*.ts
 
 # test artifacts
 chick-*.png

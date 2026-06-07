@@ -36,7 +36,7 @@ async function main() {
   const H = await makeClient();
   console.log('[creative] host connected', H.identity.toHexString().slice(0, 8));
 
-  H.conn.reducers.joinRoom({ code: ROOM, name: 'Host', mode: 'creative' });
+  H.conn.reducers.joinRoom({ code: ROOM, name: 'Host', mode: 'creative', color: 0 });
   await sleep(400);
   H.conn.reducers.submitPrompt({ text: 'spooky frozen narrow canyons at night' });
   await sleep(300);

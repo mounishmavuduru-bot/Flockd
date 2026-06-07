@@ -38,6 +38,7 @@ import JoinRoomReducer from "./join_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
 import ReportDeathReducer from "./report_death_reducer";
 import ReportFinishReducer from "./report_finish_reducer";
+import SetColorReducer from "./set_color_reducer";
 import SetNameReducer from "./set_name_reducer";
 import SetWorldConfigReducer from "./set_world_config_reducer";
 import StartBuildReducer from "./start_build_reducer";
@@ -119,6 +120,7 @@ const reducersSchema = __reducers(
   __reducerSchema("leave_room", LeaveRoomReducer),
   __reducerSchema("report_death", ReportDeathReducer),
   __reducerSchema("report_finish", ReportFinishReducer),
+  __reducerSchema("set_color", SetColorReducer),
   __reducerSchema("set_name", SetNameReducer),
   __reducerSchema("set_world_config", SetWorldConfigReducer),
   __reducerSchema("start_build", StartBuildReducer),

@@ -11,8 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  code: __t.string(),
-  name: __t.string(),
-  mode: __t.string(),
   color: __t.u32(),
 };

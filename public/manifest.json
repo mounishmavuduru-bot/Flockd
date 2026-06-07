@@ -1,7 +1,7 @@
 {
-  "name": "birdybird",
-  "short_name": "birdybird",
-  "description": "Tilt to fly — mobile bird flight arcade",
+  "name": "FLOCKD",
+  "short_name": "FLOCKD",
+  "description": "Multiplayer bird-flight: co-author worlds with AI, then outfly an AI predator.",
   "id": "/birdybird/?v=2",
   "start_url": "/birdybird/?v=2",
   "scope": "/birdybird/",
