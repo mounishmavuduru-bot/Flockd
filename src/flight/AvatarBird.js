@@ -53,13 +53,27 @@ export const BIRDS = {
 };
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
+// Heavy bird GLBs are gitignored → Vercel Blob (random-suffixed CDN URLs) in prod,
+// local public dir in dev. Stork is small + committed → loads locally everywhere.
+const BLOB_BIRDS = {
+  celestial: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/birds/celestial-gImKfHh8eK4b4ve4GFiHKBpjlZ168W.glb',
+  phoenix: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/birds/phoenix-yJ1iOL36b2GZmZe2Bbt4R4mX5MHnDo.glb',
+  cardinal: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/birds/cardinal-XOyJjeoJtmRDqFvdhDgwOSFVRPuSM2.glb',
+  pigeon: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/birds/pigeon-Po9AUwLVvBVojQGrENfAHdDEtm1M6S.glb',
+  grey: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/birds/grey-gIqFXzoQTxPN0ZfqV0CCO4bDmOneeu.glb',
+  bird: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/birds/bird-oEuQnohEJugezW6wkOBoiey3yMdvqK.glb',
+};
+function isProd() {
+  return typeof location !== 'undefined' && !!location.hostname
+    && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+}
 
 /** Resolve a skin id to its hosted .glb url (null for the built-in stork file path). */
 function avatarUrl(skinId) {
   const entry = BIRDS[skinId] || BIRDS.stork;
-  // The built-in stork ships under models/ (no birds/ asset); everything else lives
-  // in public/birds/. file:null → load the bundled Stork.glb so the wrapper still works.
+  // Stork ships under models/ (committed) — load locally everywhere.
   if (!entry.file) return BASE + 'models/Stork.glb';
+  if (isProd() && BLOB_BIRDS[skinId]) return BLOB_BIRDS[skinId];
   return BASE + 'birds/' + entry.file;
 }
 

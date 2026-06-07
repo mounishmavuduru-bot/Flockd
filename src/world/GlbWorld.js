@@ -29,9 +29,27 @@ export const WORLDS = {
   indy500:        { file: 'indy500.glb',        label: 'Indy 500 Speedway' },
 };
 
+// Heavy world GLBs are gitignored (too big for the Vercel build) → served from
+// Vercel Blob (random-suffixed CDN URLs) in production, local public dir in dev.
+const BLOB_WORLDS = {
+  sydney: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/sydney-UFkpLLAlcYZ8eJprXgCT7oyRrszDgd.glb',
+  niagara: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/niagara-i9CkKY1E76i7qOFue9TI3YBMzEaZtm.glb',
+  himeji: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/himeji-Qah7OPKgA60G8VdNpgMJFMNyL27Bop.glb',
+  christredeemer: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/christredeemer-1uLR1M0rqdRUO2hBarmt1WyHaYNFyZ.glb',
+  pantheon: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/pantheon-3FdqQ1mle2JVbiTOTvR9X3Dxe1uC67.glb',
+  riomaggiore: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/riomaggiore-8iwRL5JAevGQ8qp0vNdw66Wbphvz9B.glb',
+  ducalpalace: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/ducalpalace-soI9a1qnzVPdIrI8D49AYlP6TytCl9.glb',
+  indy500: 'https://xsnfwnaeoex0fdre.public.blob.vercel-storage.com/worlds/indy500-P31NCwPqfrafuiX3w7sD29aKCBOsFK.glb',
+};
+function isProd() {
+  return typeof location !== 'undefined' && !!location.hostname
+    && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+}
+
 export function worldUrl(id, base) {
   const w = WORLDS[id];
   if (!w) return null;
+  if (!base && isProd() && BLOB_WORLDS[id]) return BLOB_WORLDS[id];
   return (base || (import.meta.env && import.meta.env.BASE_URL) || '/') + 'worlds/' + w.file;
 }
 
