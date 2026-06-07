@@ -39,6 +39,7 @@ import DespawnPredatorReducer from "./despawn_predator_reducer";
 import EmitSabotageReducer from "./emit_sabotage_reducer";
 import JoinRoomReducer from "./join_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
+import LogCommentaryReducer from "./log_commentary_reducer";
 import LogDirectorReducer from "./log_director_reducer";
 import MovePredatorReducer from "./move_predator_reducer";
 import ReportDeathReducer from "./report_death_reducer";
@@ -57,6 +58,7 @@ import UpdateTransformReducer from "./update_transform_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import CommentaryRow from "./commentary_table";
 import DirectorLogRow from "./director_log_table";
 import FavorLedgerRow from "./favor_ledger_table";
 import LobbyPromptRow from "./lobby_prompt_table";
@@ -71,6 +73,20 @@ import WorldConfigRow from "./world_config_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  commentary: __table({
+    name: 'commentary',
+    indexes: [
+      { accessor: 'id', name: 'commentary_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'roomId', name: 'commentary_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'commentary_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, CommentaryRow),
   directorLog: __table({
     name: 'director_log',
     indexes: [
@@ -199,6 +215,7 @@ const reducersSchema = __reducers(
   __reducerSchema("emit_sabotage", EmitSabotageReducer),
   __reducerSchema("join_room", JoinRoomReducer),
   __reducerSchema("leave_room", LeaveRoomReducer),
+  __reducerSchema("log_commentary", LogCommentaryReducer),
   __reducerSchema("log_director", LogDirectorReducer),
   __reducerSchema("move_predator", MovePredatorReducer),
   __reducerSchema("report_death", ReportDeathReducer),

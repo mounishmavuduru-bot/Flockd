@@ -84,6 +84,8 @@ export class NetClient {
     this._deathReported = false;
     this._vignette = null;
     this._tithe = null;      // bottom-center 'buy mercy' TITHE control (lazy DOM)
+    this._ticker = null;     // bottom-center LIVE COMMENTARY ticker (lazy DOM)
+    this._tickerId = 0n;     // id of the last commentary row shown (dedupe)
     this.amDead = false;     // eliminated this match (spectating) — read by main.js
     this._connectTimer = null;
   }
@@ -112,7 +114,7 @@ export class NetClient {
           .subscribe([
             'SELECT * FROM player', 'SELECT * FROM room',
             'SELECT * FROM predator', 'SELECT * FROM sabotage_event', 'SELECT * FROM director_log',
-            'SELECT * FROM favor_ledger',
+            'SELECT * FROM favor_ledger', 'SELECT * FROM commentary',
           ]);
         // A survival join may have been queued before connect; init now if so.
         if (this.mode === 'survival') this._initSurvival();
@@ -196,6 +198,8 @@ export class NetClient {
     this.amDead = false;
     this._setVignette(false);
     this._setTithe(false);
+    this._setTicker(false);
+    this._tickerId = 0n;
     if (this.course && this.course.clear) this.course.clear();
     if (this.survCourse && this.survCourse.clear) this.survCourse.clear();
   }
@@ -265,6 +269,13 @@ export class NetClient {
     if (this.mode === 'creative' && this.lobby) this._driveCreative(room, roster);
     // 3b) Survival mode: predator render, course, sabotage FX, elimination.
     if (this.mode === 'survival') this._driveSurvival(room, roster, dt, camera);
+
+    // 3c) LIVE COMMENTARY ticker — newest line for my room, only while playing.
+    if (this.myRoomId !== 0n && room && room.state === 'playing') {
+      this._updateTicker(this.myRoomId);
+    } else {
+      this._setTicker(false);
+    }
 
     // 4) Surface room state for external UI/debug.
     if (this.onState) {
@@ -337,6 +348,17 @@ export class NetClient {
       if (f.roomId === roomId && f.identity.toHexString() === this.identityHex) return f;
     }
     return null;
+  }
+
+  /** The newest commentary row for a given room id (highest id), or null. */
+  _latestCommentary(roomId) {
+    if (!this.conn || roomId === 0n) return null;
+    let best = null;
+    for (const c of this.conn.db.commentary.iter()) {
+      if (c.roomId !== roomId) continue;
+      if (!best || c.id > best.id) best = c;
+    }
+    return best;
   }
 
   /** Lazily create + return the red HUNTED vignette DOM element. */
@@ -433,6 +455,68 @@ export class NetClient {
     const f = Math.max(0, Math.round(favor));
     t.read.textContent = `favor ${f} · score ${s}`;
     t.btn.disabled = s < 50;
+  }
+
+  /**
+   * Lazily create + return the LIVE COMMENTARY ticker (sleek bottom-center glass
+   * pill). Pure display: pointer-events none, never steals input. Each new line
+   * re-triggers a fade/slide-in animation. All text via textContent → XSS-safe.
+   */
+  _ensureTicker() {
+    if (this._ticker || typeof document === 'undefined') return this._ticker;
+    if (!document.getElementById('flk-ticker-style')) {
+      const style = document.createElement('style');
+      style.id = 'flk-ticker-style';
+      style.textContent = `
+        @keyframes flkTickerIn {
+          from { opacity:0; transform:translate(-50%, 14px); }
+          to   { opacity:1; transform:translate(-50%, 0); }
+        }
+        .flk-ticker{position:fixed;left:50%;bottom:74px;transform:translate(-50%,0);
+          z-index:1240;pointer-events:none;display:none;max-width:min(72vw,640px);
+          padding:9px 20px;border-radius:999px;
+          border:1px solid rgba(255,255,255,.14);
+          background:rgba(12,14,20,.62);backdrop-filter:blur(10px);
+          -webkit-backdrop-filter:blur(10px);
+          box-shadow:0 10px 30px rgba(0,0,0,.45);
+          font-family:system-ui,-apple-system,sans-serif;font-size:14px;
+          font-weight:600;letter-spacing:.2px;line-height:1.3;color:#eef2ff;
+          text-align:center;text-shadow:0 1px 4px rgba(0,0,0,.6);
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .flk-ticker.flk-ticker-anim{animation:flkTickerIn .42s cubic-bezier(.2,.8,.2,1)}
+      `;
+      document.head.appendChild(style);
+    }
+    const el = document.createElement('div');
+    el.className = 'flk-ticker';
+    document.body.appendChild(el);
+    this._ticker = el;
+    return el;
+  }
+
+  _setTicker(on) {
+    const el = this._ensureTicker();
+    if (el) el.style.display = on ? 'block' : 'none';
+  }
+
+  /**
+   * Show the newest commentary line for my room while playing. Dedupes on row id
+   * so the fade/slide-in only fires when the line actually changes.
+   */
+  _updateTicker(roomId) {
+    const row = this._latestCommentary(roomId);
+    if (!row) { this._setTicker(false); return; }
+    const el = this._ensureTicker();
+    if (!el) return;
+    if (row.id !== this._tickerId) {
+      this._tickerId = row.id;
+      el.textContent = row.text || '';            // XSS-safe
+      // Restart the entrance animation on each new line.
+      el.classList.remove('flk-ticker-anim');
+      void el.offsetWidth;                          // reflow → re-trigger keyframes
+      el.classList.add('flk-ticker-anim');
+    }
+    this._setTicker(true);
   }
 
   /**

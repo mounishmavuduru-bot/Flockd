@@ -3,9 +3,10 @@
  *
  * A standalone, READ-ONLY visualizer that proves the LLM genuinely drives the
  * survival predator. It subscribes to the same SpacetimeDB rows the game writes
- * (director_log / predator / sabotage_event / player / room) and renders them:
- * current decision, a live reasoning feed, a sabotage timeline, a Canvas2D radar
- * and a derived L4D-style director-state chip.
+ * (director_log / commentary / predator / sabotage_event / player / room) and
+ * renders them: current decision, a live esports-ticker commentary feed, a live
+ * reasoning feed, a sabotage timeline, a Canvas2D radar and a derived L4D-style
+ * director-state chip.
  *
  * It NEVER calls a reducer. All model/user text (reasoning, taunt, names,
  * reason) goes through textContent — XSS-safe. Static chrome may use innerHTML.
@@ -35,6 +36,7 @@ function sabotageMeta(kind) {
 
 const REASON_MAX = 40;       // prune the reasoning feed to this many rows
 const SABO_MAX = 24;         // keep at most this many sabotage chips
+const COMM_MAX = 30;         // most recent commentary lines kept in the ticker scroll
 const PERSONA = 'SKRAAH — THE HUNT';
 
 // ---------------------------------------------------------------- helpers
@@ -182,6 +184,29 @@ const CSS = `
 .radar-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);font-weight:600;flex-wrap:wrap;justify-content:center}
 .radar-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
 
+/* ---- live commentary (esports ticker) ---- */
+.comm-card{position:relative;overflow:hidden;
+  background:linear-gradient(135deg,rgba(176,107,255,.10),rgba(10,14,30,.4));
+  border-color:rgba(176,107,255,.35)}
+.comm-card .card-h .live-pip{display:inline-flex;align-items:center;gap:7px;color:#ff6b6b;
+  font-weight:900;letter-spacing:1.5px}
+.comm-card .card-h .live-pip i{width:9px;height:9px;border-radius:50%;background:#ff4d4d;
+  box-shadow:0 0 10px rgba(255,77,77,.95);animation:huntPulse 1.2s ease-in-out infinite}
+.comm-lead{border-radius:14px;background:rgba(8,6,18,.55);border:1px solid rgba(176,107,255,.35);
+  padding:16px 18px;margin-bottom:12px;box-shadow:inset 0 0 30px rgba(176,107,255,.12)}
+.comm-lead .clead-t{font-size:10.5px;letter-spacing:1.2px;color:#9f86d6;font-weight:800;
+  text-transform:uppercase;margin-bottom:7px;display:flex;gap:8px;align-items:baseline}
+.comm-lead .clead-t .tm{color:var(--dim);font-weight:700;letter-spacing:.5px}
+.comm-lead .clead-x{font-size:19px;line-height:1.35;font-weight:800;color:#f3ecff;
+  word-break:break-word;text-shadow:0 0 18px rgba(176,107,255,.3);animation:frIn .35s ease}
+.comm-scroll{display:flex;flex-direction:column;gap:8px;max-height:200px;overflow:auto;scroll-behavior:smooth}
+.comm-line{display:flex;gap:10px;align-items:baseline;font-size:13px;line-height:1.5;
+  color:#c7d3ec;padding:5px 0 5px 11px;border-left:2px solid rgba(176,107,255,.4);animation:frIn .3s ease}
+.comm-line .ct{flex:0 0 auto;font-family:var(--mono);font-size:10.5px;color:#8f7bd6;font-weight:700;
+  letter-spacing:.5px}
+.comm-line .cx{min-width:0;word-break:break-word}
+.comm-empty{color:var(--dim);font-size:13px;font-style:italic}
+
 .foot{text-align:center;color:var(--dim);font-size:11px;letter-spacing:.5px;padding:8px 0 0}
 .foot b{color:var(--muted)}
 
@@ -210,6 +235,7 @@ class HuntDashboard {
 
     this.sabotageEvents = [];    // captured via onInsert (EVENT table)
     this._reasonKeys = new Set();// director_log ids already in the feed
+    this._commLeadId = null;     // commentary id currently shown as the big lead line
     this._lastDecisionId = null;
     this._dirty = true;          // re-render requested
 
@@ -265,8 +291,25 @@ class HuntDashboard {
   _buildGrid() {
     const grid = el('div', 'grid');
 
-    // LEFT column: decision card + reasoning feed
+    // LEFT column: decision card + live commentary + reasoning feed
     const left = el('div', 'col');
+
+    // Live commentary (esports ticker)
+    const commCard = el('div', 'card comm-card');
+    const commH = el('div', 'card-h');
+    commH.appendChild(el('span', null, 'LIVE COMMENTARY'));
+    const pip = el('span', 'live-pip');
+    pip.appendChild(el('i'));
+    pip.appendChild(document.createTextNode('ON AIR'));
+    commH.appendChild(pip);
+    commCard.appendChild(commH);
+    this.elCommLead = el('div', 'comm-lead');
+    this.elCommLead.style.display = 'none';
+    commCard.appendChild(this.elCommLead);
+    this.elComm = el('div', 'comm-scroll');
+    this.elComm.appendChild(el('div', 'comm-empty', 'Awaiting the call… commentary begins when the hunt is on.'));
+    commCard.appendChild(this.elComm);
+    left.appendChild(commCard);
 
     // Decision card
     const dec = el('div', 'card');
@@ -342,6 +385,7 @@ class HuntDashboard {
           .subscribe([
             'SELECT * FROM room', 'SELECT * FROM player', 'SELECT * FROM predator',
             'SELECT * FROM director_log', 'SELECT * FROM sabotage_event',
+            'SELECT * FROM commentary',
           ]);
         this._wireCallbacks(conn);
         // eslint-disable-next-line no-console
@@ -380,6 +424,10 @@ class HuntDashboard {
     conn.db.directorLog.onInsert(touch);
     conn.db.directorLog.onUpdate(touch);
 
+    // commentary is append-only; refresh the live ticker on insert.
+    conn.db.commentary.onInsert(touch);
+    conn.db.commentary.onUpdate(touch);
+
     // sabotage_event is an EVENT table → rows arrive via onInsert; keep an array.
     conn.db.sabotageEvent.onInsert((_ctx, row) => {
       this.sabotageEvents.push(row);
@@ -415,10 +463,19 @@ class HuntDashboard {
       // New room focus → reset per-match collected state.
       this.sabotageEvents = this.sabotageEvents.filter((e) => e.roomId === chosen.id);
       this._reasonKeys.clear();
+      this._commLeadId = null;
       this._lastDecisionId = null;
       if (this.elFeed) {
         this.elFeed.innerHTML = '';
         this.elFeed.appendChild(el('div', 'feed-empty', 'No director reasoning yet — waiting for the first decision…'));
+      }
+      if (this.elComm) {
+        this.elComm.innerHTML = '';
+        this.elComm.appendChild(el('div', 'comm-empty', 'Awaiting the call… commentary begins when the hunt is on.'));
+      }
+      if (this.elCommLead) {
+        this.elCommLead.style.display = 'none';
+        this.elCommLead.innerHTML = '';
       }
     }
   }
@@ -450,6 +507,17 @@ class HuntDashboard {
     return out;
   }
 
+  /** commentary rows for this room, newest first. */
+  _commentary() {
+    const out = [];
+    if (!this.conn || this.roomId === 0n) return out;
+    for (const c of this.conn.db.commentary.iter()) {
+      if (c.roomId === this.roomId) out.push(c);
+    }
+    out.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)); // bigint desc
+    return out;
+  }
+
   // ---- render ----------------------------------------------------------
   _renderEmpty() {
     this.elBody.innerHTML = '';
@@ -476,6 +544,7 @@ class HuntDashboard {
     this._ensureGrid();
 
     this._renderDecision();
+    this._renderCommentary();
     this._renderFeed();
     this._renderSabotage();
     this._renderRadar();
@@ -591,6 +660,49 @@ class HuntDashboard {
         box.appendChild(top);
       }
       body.appendChild(box);
+    }
+  }
+
+  _renderCommentary() {
+    const lines = this._commentary(); // newest first
+    const lead = lines[0];
+
+    // ---- big lead line (newest), re-animated only when it changes ----
+    if (!lead) {
+      if (this.elCommLead.style.display !== 'none') {
+        this.elCommLead.style.display = 'none';
+        this.elCommLead.innerHTML = '';
+        this._commLeadId = null;
+      }
+    } else if (String(lead.id) !== String(this._commLeadId)) {
+      this._commLeadId = String(lead.id);
+      this.elCommLead.style.display = '';
+      this.elCommLead.innerHTML = '';
+      const t = el('div', 'clead-t');
+      t.appendChild(document.createTextNode('NOW'));
+      t.appendChild(el('span', 'tm', clockLabel(tsToMillis(lead.createdAt))));
+      this.elCommLead.appendChild(t);
+      const x = el('div', 'clead-x');
+      x.appendChild(document.createTextNode(lead.text || ''));
+      this.elCommLead.appendChild(x);
+    }
+
+    // ---- recent scroll (everything below the lead) ----
+    const rest = lines.slice(1, 1 + COMM_MAX);
+    this.elComm.innerHTML = '';
+    if (!rest.length) {
+      if (!lead) {
+        this.elComm.appendChild(el('div', 'comm-empty', 'Awaiting the call… commentary begins when the hunt is on.'));
+      }
+      return;
+    }
+    for (const c of rest) {
+      const line = el('div', 'comm-line');
+      line.appendChild(el('span', 'ct', clockLabel(tsToMillis(c.createdAt))));
+      const x = el('span', 'cx');
+      x.appendChild(document.createTextNode(c.text || ''));
+      line.appendChild(x);
+      this.elComm.appendChild(line);
     }
   }
 

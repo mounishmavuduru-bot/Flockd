@@ -17,6 +17,7 @@ import { resolve } from 'node:path';
 import { DbConnection } from '../../src/net/bindings';
 import { generateWorld } from './worldgen';
 import { startSurvivalDirector, stopSurvivalDirector } from './survival';
+import { startCommentary, stopCommentary } from './commentary';
 
 const URI = process.env.STDB_URI || 'ws://localhost:3000';
 const DB = process.env.STDB_DB || 'flocked';
@@ -25,6 +26,9 @@ const SWEEP_MS = 500;
 const inFlight = new Set<string>();
 // Rooms whose survival director loops are currently running (keyed by roomId string).
 const survivalStarted = new Set<string>();
+// Rooms whose live-commentary loops are currently running (keyed by roomId string).
+// Runs for ANY playing room (creative AND survival).
+const commentaryStarted = new Set<string>();
 
 // Persist the sidecar's STDB identity token so it reconnects as the SAME identity
 // across restarts — required for the server's claimSidecar() gate to keep working.
@@ -121,6 +125,47 @@ function survivalSweep(conn: any) {
   }
 }
 
+/**
+ * Live-commentary lifecycle sweep — runs alongside the world-gen + survival
+ * sweeps. Unlike the survival sweep, this fires for ANY room that is 'playing'
+ * (creative AND survival), so the esports-caster feed is live in every match.
+ *
+ *  - The first time we see a room in state==='playing' that we haven't started,
+ *    we start its commentary loop ONCE.
+ *  - When a started room is no longer 'playing' (state moved on, or the row
+ *    disappeared), we stop the loop.
+ */
+function commentarySweep(conn: any) {
+  const playingNow = new Set<string>();
+
+  for (const r of conn.db.room.iter()) {
+    if (r.state !== 'playing') continue;
+    const k = r.id.toString();
+    playingNow.add(k);
+
+    if (!commentaryStarted.has(k)) {
+      try {
+        startCommentary(conn, r);
+        commentaryStarted.add(k);
+      } catch (e: any) {
+        console.error('[sidecar] failed to start commentary:', e?.message || e);
+      }
+    }
+  }
+
+  // Tear down any started room that is no longer playing (state changed or gone).
+  for (const k of [...commentaryStarted]) {
+    if (playingNow.has(k)) continue;
+    try {
+      stopCommentary(BigInt(k));
+    } catch (e: any) {
+      console.error('[sidecar] failed to stop commentary:', e?.message || e);
+    } finally {
+      commentaryStarted.delete(k);
+    }
+  }
+}
+
 function connect() {
   const builder = DbConnection.builder().withUri(URI).withDatabaseName(DB);
   const saved = loadToken();
@@ -141,10 +186,13 @@ function connect() {
           'SELECT * FROM predator',
           'SELECT * FROM sidecar',
           'SELECT * FROM favor_ledger',
+          'SELECT * FROM director_log',
+          'SELECT * FROM commentary',
         ]);
       setInterval(() => {
         sweep(conn);
         survivalSweep(conn);
+        commentarySweep(conn);
       }, SWEEP_MS);
     })
     .onConnectError((_c: any, err: any) => console.error('[sidecar] connect error:', err))

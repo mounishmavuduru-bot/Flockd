@@ -10,6 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const Commentary = __t.object("Commentary", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  text: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Commentary = __Infer<typeof Commentary>;
+
 export const DirectorLog = __t.object("DirectorLog", {
   id: __t.u64(),
   roomId: __t.u64(),
