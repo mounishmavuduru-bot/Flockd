@@ -25,3 +25,6 @@ public/worlds/
 chick-*.png
 smoke-*.png
 .vercel
+
+# heavy GLB bird avatars (lazy-loaded; Vercel Blob for deploy)
+public/birds/
