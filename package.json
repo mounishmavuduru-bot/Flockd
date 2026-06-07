@@ -8,15 +8,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "stdb:gen": "spacetime generate --lang typescript --out-dir src/net/bindings --project-path server",
-    "stdb:publish:local": "spacetime publish --server local flocked --project-path server",
+    "stdb:gen": "spacetime generate --lang typescript --out-dir src/net/bindings --module-path server/spacetimedb",
+    "stdb:publish:local": "spacetime publish flocked --server local --module-path server/spacetimedb -y",
+    "stdb:build": "spacetime build --module-path server/spacetimedb",
     "stdb:start": "spacetime start",
     "sidecar": "node services/ai-sidecar/index.js"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.34",
     "lil-gui": "^0.21.0",
-    "spacetimedb": "^2.4.0",
+    "spacetimedb": "2.4.0",
     "three": "^0.184.0"
   },
   "devDependencies": {

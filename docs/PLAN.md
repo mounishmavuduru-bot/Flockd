@@ -6,17 +6,23 @@ Vertical-slice-first: demoable at every phase. Forked flight core already runs.
 - [x] Fork birdybird → `~/flocked`, strip author's personal files, fresh git
 - [x] Scaffold dirs: `src/net/`, `src/game/modes/`, `services/ai-sidecar/`, `server/` (next), `docs/`
 - [x] `package.json` rename + add `spacetimedb` dep + STDB/sidecar scripts
-- [ ] `npm install`, verify forked base still builds (`npm run build`)
-- [ ] First commit
+- [x] `npm install`, verify forked base still builds (`npm run build`)
+- [x] First commit
 
 ## Phase 1 — Netcode base (hardest infra; everything builds on it)
-- [ ] `spacetime init` TS module in `server/`
-- [ ] Tables: `room`, `player`; reducers: join/leave/lifecycle/`update_transform`; scheduled `game_tick`
-- [ ] `spacetime start` (local) + publish + `stdb:gen` bindings
+- [x] `spacetime init` TS module in `server/` (TypeScript, v2.4)
+- [x] Tables: `room`, `player`, `tick_timer`; reducers: join/leave/lifecycle/`update_transform`/`start_game`/finish/death; scheduled `tick`
+- [x] `spacetime start` (local) + publish (`flocked` db) + `stdb:gen` bindings → `src/net/bindings`
+- [x] Backend validated end-to-end via CLI (join_room → room+player rows; start_game → state=playing)
 - [ ] `src/net/connection.js` connect/subscribe/reconnect (+ token persistence)
 - [ ] `src/net/remoteBirds.js` render+interpolate other storks
 - [ ] `src/net/sync.js` throttled local transform push
+- [ ] Wire net into `main.js` update loop
 - [ ] **Slice demo:** 2 browser tabs = 2 storks flying in the same world, seeing each other
+
+### Phase 1 — known refinements (do in Phase 2 lobby work)
+- Count room members via live `online && roomId==X` filter instead of stored `playerCount` (reconnect-robust)
+- onConnect should restore room membership / onDisconnect grace timer
 
 ## Phase 2 — Creative mode + LLM #1 (co-authored world)
 - [ ] Lobby UI: room code, join, prompt box, "ready"/start
