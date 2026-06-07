@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+**/node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# spacetimedb / rust module build output
+server/target/
+
+# stray plugin artifacts
+ruvector.db
+
+# test artifacts
+chick-*.png
+smoke-*.png
