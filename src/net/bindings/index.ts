@@ -42,6 +42,7 @@ import LeaveRoomReducer from "./leave_room_reducer";
 import LogCommentaryReducer from "./log_commentary_reducer";
 import LogDirectorReducer from "./log_director_reducer";
 import MovePredatorReducer from "./move_predator_reducer";
+import PredatorShootReducer from "./predator_shoot_reducer";
 import ReportDeathReducer from "./report_death_reducer";
 import ReportFinishReducer from "./report_finish_reducer";
 import SetColorReducer from "./set_color_reducer";
@@ -66,6 +67,7 @@ import PlayerRow from "./player_table";
 import PredatorRow from "./predator_table";
 import RoomRow from "./room_table";
 import SabotageEventRow from "./sabotage_event_table";
+import ShotEventRow from "./shot_event_table";
 import SidecarRow from "./sidecar_table";
 import WorldConfigRow from "./world_config_table";
 
@@ -184,6 +186,21 @@ const tablesSchema = __schema({
     ],
     event: true,
   }, SabotageEventRow),
+  shotEvent: __table({
+    name: 'shot_event',
+    indexes: [
+      { accessor: 'id', name: 'shot_event_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'roomId', name: 'shot_event_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'shot_event_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+    event: true,
+  }, ShotEventRow),
   sidecar: __table({
     name: 'sidecar',
     indexes: [
@@ -218,6 +235,7 @@ const reducersSchema = __reducers(
   __reducerSchema("log_commentary", LogCommentaryReducer),
   __reducerSchema("log_director", LogDirectorReducer),
   __reducerSchema("move_predator", MovePredatorReducer),
+  __reducerSchema("predator_shoot", PredatorShootReducer),
   __reducerSchema("report_death", ReportDeathReducer),
   __reducerSchema("report_finish", ReportFinishReducer),
   __reducerSchema("set_color", SetColorReducer),

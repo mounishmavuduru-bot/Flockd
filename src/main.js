@@ -695,17 +695,71 @@ hud.hint.innerHTML = 'SPACE = Flap &nbsp;|&nbsp; A/D = Turn &nbsp;|&nbsp; W = Di
 // Debug panel removed — use webcam overlay for pose debugging
 
 // --- Game Loop ---
+// Death flow: the first frame you're eliminated, a SHOT DOWN overlay offers a
+// choice — keep watching the flock, or exit the lobby. Picking "watch" drops a
+// small spectating banner; the leave button (top-left) still works any time.
+let deathOverlay = null;
 let spectateBanner = null;
-function setSpectate(on) {
+let wasDead = false;
+
+function buildDeathOverlay() {
+  deathOverlay = document.createElement('div');
+  deathOverlay.style.cssText = 'position:fixed;inset:0;z-index:1500;display:none;flex-direction:column;'
+    + 'align-items:center;justify-content:center;gap:20px;'
+    + 'background:radial-gradient(ellipse at center,rgba(24,4,6,.5),rgba(6,2,4,.88));'
+    + '-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)';
+  const title = document.createElement('div');
+  title.textContent = 'SHOT DOWN';
+  title.style.cssText = 'color:#ff5a4c;font:900 54px system-ui,sans-serif;letter-spacing:6px;'
+    + 'text-shadow:0 0 26px rgba(255,40,30,.7)';
+  const sub = document.createElement('div');
+  sub.textContent = 'The hunters got you — three shots, three hits.';
+  sub.style.cssText = 'color:#e8b0a8;font:500 15px system-ui,sans-serif;margin-top:-6px';
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:14px;margin-top:8px';
+  const mk = (label, primary) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'padding:13px 26px;border-radius:999px;cursor:pointer;font:700 15px system-ui,sans-serif;'
+      + 'border:1px solid ' + (primary ? 'transparent' : 'rgba(150,170,230,.4)') + ';'
+      + 'color:' + (primary ? '#0a0e18' : '#eaf2ff') + ';'
+      + 'background:' + (primary ? '#eaf2ff' : 'rgba(16,22,38,.6)');
+    return b;
+  };
+  const watchBtn = mk('Watch the flock', true);
+  const exitBtn = mk('Exit lobby', false);
+  watchBtn.addEventListener('click', () => { deathOverlay.style.display = 'none'; setSpectateBanner(true); });
+  exitBtn.addEventListener('click', () => { deathOverlay.style.display = 'none'; setSpectateBanner(false); if (net) net.leave(); });
+  btns.appendChild(watchBtn); btns.appendChild(exitBtn);
+  deathOverlay.appendChild(title); deathOverlay.appendChild(sub); deathOverlay.appendChild(btns);
+  document.body.appendChild(deathOverlay);
+}
+
+function setSpectateBanner(on) {
   if (on && !spectateBanner) {
     spectateBanner = document.createElement('div');
-    spectateBanner.textContent = '☠ ELIMINATED — spectating';
-    spectateBanner.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);'
-      + 'z-index:1300;color:#ff6b6b;font:800 30px system-ui,sans-serif;letter-spacing:3px;'
-      + 'pointer-events:none;text-shadow:0 0 18px rgba(255,40,40,.7)';
+    spectateBanner.textContent = '☠ Spectating the hunt';
+    spectateBanner.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);'
+      + 'z-index:1300;color:#ff9b8c;font:700 13px system-ui,sans-serif;letter-spacing:2px;'
+      + 'pointer-events:none;padding:7px 16px;border-radius:999px;background:rgba(20,6,8,.55);'
+      + 'border:1px solid rgba(255,90,76,.3)';
     document.body.appendChild(spectateBanner);
   }
   if (spectateBanner) spectateBanner.style.display = on ? 'block' : 'none';
+}
+
+function setSpectate(on) {
+  if (on && !wasDead) {
+    // Just eliminated → present the watch / exit choice.
+    if (!deathOverlay) buildDeathOverlay();
+    deathOverlay.style.display = 'flex';
+  }
+  if (!on) {
+    // Alive again / left the room → clear death UI.
+    if (deathOverlay) deathOverlay.style.display = 'none';
+    setSpectateBanner(false);
+  }
+  wasDead = on;
 }
 
 const loop = new GameLoop();

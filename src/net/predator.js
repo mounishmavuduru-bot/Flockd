@@ -57,8 +57,14 @@ export class Predator {
     this._right = new THREE.Vector3(1, 0, 0);
     this._up = new THREE.Vector3(0, 1, 0);
 
-    this.slots = SLOTS.map((slot) => ({ slot, obj: null }));
+    this.slots = SLOTS.map((slot) => ({ slot, obj: null, recoil: 0 }));
     this._loadHunter();
+  }
+
+  /** Kick a recoil impulse on one hunter slot (0..2) — called when it fires. */
+  fire(slotIdx) {
+    const h = this.slots[slotIdx % this.slots.length];
+    if (h) h.recoil = 1;
   }
 
   _loadHunter() {
@@ -149,16 +155,18 @@ export class Predator {
     const tNow = performance.now() / 1000;
     for (const h of this.slots) {
       if (!h.obj) continue;
+      if (h.recoil > 0) h.recoil = Math.max(0, h.recoil - dt * 5.0); // ~0.2s kick
       h.obj.position.copy(this._pos)
         .addScaledVector(this._right, h.slot.right)
         .addScaledVector(this._up, h.slot.up)
-        .addScaledVector(this._fwd, h.slot.fwd);
+        .addScaledVector(this._fwd, h.slot.fwd)
+        .addScaledVector(this._fwd, -h.recoil * 14);        // recoil kicks it backward
       // Procedural bob (no rig yet) + slight bank so the trio reads as alive.
       h.obj.position.y += Math.sin((tNow + h.slot.bob) * 3.0) * 3.0;
       h.obj.rotation.set(
-        Math.sin((tNow + h.slot.bob) * 2.0) * 0.06,       // gentle pitch waver
+        Math.sin((tNow + h.slot.bob) * 2.0) * 0.06 - h.recoil * 0.25, // pitch waver + muzzle climb
         this._yaw + YAW_OFFSET,
-        Math.sin((tNow + h.slot.bob) * 2.5) * 0.10,       // gentle roll/bank
+        Math.sin((tNow + h.slot.bob) * 2.5) * 0.10,         // gentle roll/bank
       );
     }
   }

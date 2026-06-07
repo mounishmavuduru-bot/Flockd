@@ -64,6 +64,7 @@ export const Player = __t.object("Player", {
   alive: __t.bool(),
   finished: __t.bool(),
   score: __t.i32(),
+  hits: __t.u32(),
   online: __t.bool(),
   updatedAt: __t.timestamp(),
 });
@@ -107,6 +108,23 @@ export const SabotageEvent = __t.object("SabotageEvent", {
   createdAt: __t.timestamp(),
 });
 export type SabotageEvent = __Infer<typeof SabotageEvent>;
+
+export const ShotEvent = __t.object("ShotEvent", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  shooter: __t.u32(),
+  target: __t.identity(),
+  hit: __t.bool(),
+  lethal: __t.bool(),
+  ox: __t.f32(),
+  oy: __t.f32(),
+  oz: __t.f32(),
+  tx: __t.f32(),
+  ty: __t.f32(),
+  tz: __t.f32(),
+  createdAt: __t.timestamp(),
+});
+export type ShotEvent = __Infer<typeof ShotEvent>;
 
 export const Sidecar = __t.object("Sidecar", {
   id: __t.u64(),

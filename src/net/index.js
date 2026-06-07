@@ -18,6 +18,7 @@ import { RemoteBirds } from './remoteBirds.js';
 import { RingCourse, applyPalette } from './applyWorld.js';
 import { Predator } from './predator.js';
 import { SabotageFX } from './sabotage.js';
+import { ShotFX } from './shotFX.js';
 
 const DB_NAME = 'flocked';
 const SEND_HZ = 12;
@@ -111,8 +112,8 @@ export class NetClient {
           .onApplied(() => { /* initial rows loaded */ })
           .subscribe([
             'SELECT * FROM player', 'SELECT * FROM room', 'SELECT * FROM world_config',
-            'SELECT * FROM predator', 'SELECT * FROM sabotage_event', 'SELECT * FROM director_log',
-            'SELECT * FROM favor_ledger', 'SELECT * FROM commentary',
+            'SELECT * FROM predator', 'SELECT * FROM sabotage_event', 'SELECT * FROM shot_event',
+            'SELECT * FROM director_log', 'SELECT * FROM favor_ledger', 'SELECT * FROM commentary',
           ]);
         // A survival join may have been queued before connect; init now if so.
         if (this.mode === 'survival') this._initSurvival();
@@ -186,6 +187,7 @@ export class NetClient {
     if (this._survInit || !this.connected || !this.conn) return;
     this.predator = new Predator(this.scene);
     this.sabotage = new SabotageFX(this.scene, () => this.flightPhysics);
+    this.shotFX = new ShotFX(this.scene);
     this.survCourse = new RingCourse(this.scene);
 
     // Apply each sabotage_event the instant it lands (EVENT table → onInsert).
@@ -193,8 +195,36 @@ export class NetClient {
       this.sabotage.handleEvent(row, this.identityHex);
     });
 
+    // Render each gunshot the hunters fire (EVENT table → onInsert). Damage was
+    // already resolved server-side; we draw the tracer/flash and, if it hit me,
+    // flash the screen. The 3rd hit sets alive=false server-side → amDead.
+    this.conn.db.shotEvent.onInsert((_ctx, row) => {
+      if (!this.myRoomId || row.roomId !== this.myRoomId) return;
+      this.shotFX.spawn({ x: row.ox, y: row.oy, z: row.oz }, { x: row.tx, y: row.ty, z: row.tz }, row.hit);
+      if (this.predator) this.predator.fire(row.shooter);
+      let targetHex = null;
+      try { targetHex = row.target.toHexString(); } catch { targetHex = null; }
+      if (row.hit && targetHex === this.identityHex) this._flashHit(row.lethal);
+    });
+
     this._survInit = true;
     console.log('[net] survival initialized');
+  }
+
+  /** Red screen flash when a shot hits me (stronger on the killing shot). */
+  _flashHit(lethal) {
+    let el = document.getElementById('flk-hitflash');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'flk-hitflash';
+      el.style.cssText = 'position:fixed;inset:0;z-index:1400;pointer-events:none;'
+        + 'background:radial-gradient(ellipse at center,rgba(255,40,30,0) 40%,rgba(255,20,16,.55) 100%);'
+        + 'opacity:0;transition:opacity .09s ease-out';
+      document.body.appendChild(el);
+    }
+    el.style.opacity = lethal ? '1' : '0.7';
+    clearTimeout(this._hitFlashT);
+    this._hitFlashT = setTimeout(() => { el.style.opacity = '0'; }, lethal ? 220 : 130);
   }
 
   /** Creative mode: submit/replace this player's world prompt fragment (lobby only). */
@@ -555,14 +585,17 @@ export class NetClient {
 
     const state = room ? room.state : null;
 
-    // Always advance sabotage FX (handles fog restore even between states).
+    // Always advance sabotage + gunfire FX (handles fog restore even between states).
     this.sabotage.update(dt);
+    if (this.shotFX) this.shotFX.update(dt);
 
     if (state !== 'playing') {
       // Not racing → no predator, reset per-match elimination/vignette state.
       this.predator.reconcile(null, dt, camera);
       this._setVignette(false);
       this._setTithe(false);
+      this._setHealth(null);
+      if (this.shotFX) this.shotFX.clear();
       this._survWorldApplied = false;
       this._huntTimer = 0;
       this._deathReported = false;
@@ -608,27 +641,45 @@ export class NetClient {
     this.predator.reconcile(pRow, dt, camera);
 
     if (pRow && pRow.active) {
-      // HUNTED vignette when the predator is targeting ME.
+      // HUNTED vignette when the hunters are targeting ME.
       let targetHex = null;
       try { targetHex = pRow.targetPlayer.toHexString(); } catch { targetHex = null; }
       this._setVignette(targetHex === this.identityHex);
-
-      // Continuous-proximity elimination — only once the hunt has actually begun
-      // (never during 'patrol' / at spawn), so nobody dies before the chase.
-      const dist = this.predator.getPosition().distanceTo(this.localState.position);
-      if (dist < CATCH_RADIUS && pRow.behavior !== 'patrol' && !this._deathReported) {
-        this._huntTimer += dt;
-        if (this._huntTimer >= CATCH_SECONDS && !this._deathReported) {
-          this._deathReported = true;
-          this.reportDeath();
-          console.log('[net] predator caught me → reportDeath');
-        }
-      } else {
-        this._huntTimer = 0; // must be CONTINUOUS
-      }
     } else {
       this._setVignette(false);
-      this._huntTimer = 0;
+    }
+
+    // Health pips from my synced hit count (the hunters shoot; 3 hits = down).
+    const me = this._myRow();
+    this._setHealth(me && !this.amDead ? (me.hits || 0) : null);
+  }
+
+  /** Render 3 health pips (null hides them). Pips drop as the hunters land shots. */
+  _setHealth(hits) {
+    let bar = document.getElementById('flk-health');
+    if (hits === null || hits === undefined) { if (bar) bar.style.display = 'none'; return; }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'flk-health';
+      bar.style.cssText = 'position:fixed;left:50%;bottom:84px;transform:translateX(-50%);z-index:1250;'
+        + 'display:flex;gap:9px;padding:8px 12px;border-radius:999px;'
+        + 'background:rgba(10,14,24,.55);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);'
+        + 'border:1px solid rgba(120,150,220,.25)';
+      for (let i = 0; i < 3; i++) {
+        const pip = document.createElement('span');
+        pip.className = 'flk-pip';
+        pip.style.cssText = 'width:16px;height:16px;border-radius:50%;transition:background .15s,box-shadow .15s';
+        bar.appendChild(pip);
+      }
+      document.body.appendChild(bar);
+    }
+    bar.style.display = 'flex';
+    const remaining = Math.max(0, 3 - (hits || 0));
+    const pips = bar.children;
+    for (let i = 0; i < pips.length; i++) {
+      const alive = i < remaining;
+      pips[i].style.background = alive ? '#36d17a' : 'rgba(255,70,60,.25)';
+      pips[i].style.boxShadow = alive ? '0 0 10px rgba(54,209,122,.7)' : 'none';
     }
   }
 }

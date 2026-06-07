@@ -16,7 +16,7 @@ agentdb.rvf.lock
 _probe_*.ts
 
 # sidecar STDB identity token (privileged) — never commit
-.sidecar-token
+.sidecar-token*
 
 # heavy GLB world maps (lazy-loaded; hosted on Vercel Blob for deploy)
 public/worlds/

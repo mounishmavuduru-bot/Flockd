@@ -32,7 +32,10 @@ const commentaryStarted = new Set<string>();
 
 // Persist the sidecar's STDB identity token so it reconnects as the SAME identity
 // across restarts — required for the server's claimSidecar() gate to keep working.
-const TOKEN_FILE = resolve(process.cwd(), '.sidecar-token');
+// Tokens are per-STDB-instance, so key the file by target: a local token is
+// Unauthorized on maincloud and vice-versa. Local keeps the original filename.
+const TOKEN_SUFFIX = /localhost|127\.0\.0\.1/.test(URI) ? '' : '-' + URI.replace(/[^a-z0-9]/gi, '');
+const TOKEN_FILE = resolve(process.cwd(), '.sidecar-token' + TOKEN_SUFFIX);
 function loadToken(): string | undefined {
   try { return existsSync(TOKEN_FILE) ? readFileSync(TOKEN_FILE, 'utf8').trim() || undefined : undefined; } catch { return undefined; }
 }

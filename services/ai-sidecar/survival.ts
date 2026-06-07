@@ -23,6 +23,8 @@ export const PREDATOR_SPEED = 50;  // ~0.92x player top speed: scary but catchab
 
 const STEER_FRACTION = 0.18;       // fraction of the gap closed per steering tick
 const PATROL_RADIUS = 80;          // idle orbit radius when there's no target
+const FIRE_RANGE = 420;            // hunters open fire within this distance of the target
+const FIRE_COOLDOWN_MS = 850;      // min gap between shots (server rolls 75% per shot)
 const PATROL_HEIGHT = 70;          // idle patrol altitude around origin
 
 // ─────────────────────── Per-room state ──────────────────────
@@ -35,6 +37,7 @@ interface RoomHandle {
   targetName: string;
   behavior: string;
   patrolAngle: number;
+  lastShotMs: number; // fire-rate cooldown for the hunters' guns
 }
 
 const rooms = new Map<string, RoomHandle>();
@@ -175,6 +178,24 @@ function steerTick(conn: any, roomId: bigint): void {
     behavior: h.behavior || 'patrol',
     speed: PREDATOR_SPEED,
   });
+
+  // Open fire: when the hunters are locked on and within range, take a shot.
+  // The server resolves 75% accuracy + damage (3 hits kills); we just trigger
+  // on a fixed cooldown and pick which formation slot's muzzle flashes.
+  if (target && h.targetPlayer) {
+    const fdx = target.x - nx, fdy = target.y - ny, fdz = target.z - nz;
+    const fgap = Math.sqrt(fdx * fdx + fdy * fdy + fdz * fdz);
+    const now = Date.now();
+    if (fgap < FIRE_RANGE && now - (h.lastShotMs || 0) >= FIRE_COOLDOWN_MS) {
+      h.lastShotMs = now;
+      conn.reducers.predatorShoot({
+        roomId,
+        shooter: Math.floor(Math.random() * 3),
+        target: h.targetPlayer,
+        ox: nx, oy: ny, oz: nz,
+      });
+    }
+  }
 }
 
 // ─────────────────────── Director (Claude) ─────────────────────
@@ -408,6 +429,7 @@ export function startSurvivalDirector(conn: any, room: any): void {
     targetName: '',
     behavior: 'patrol',
     patrolAngle: Math.random() * Math.PI * 2,
+    lastShotMs: 0,
   };
   rooms.set(k, handle);
   console.log(`[survival] director started for room ${room.code || roomId} (mode=${room.mode})`);
