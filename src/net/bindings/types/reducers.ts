@@ -22,6 +22,7 @@ import SpawnPredatorReducer from "../spawn_predator_reducer";
 import StartBuildReducer from "../start_build_reducer";
 import StartGameReducer from "../start_game_reducer";
 import SubmitPromptReducer from "../submit_prompt_reducer";
+import TitheReducer from "../tithe_reducer";
 import UpdateTransformReducer from "../update_transform_reducer";
 
 export type ClaimSidecarParams = __Infer<typeof ClaimSidecarReducer>;
@@ -40,5 +41,6 @@ export type SpawnPredatorParams = __Infer<typeof SpawnPredatorReducer>;
 export type StartBuildParams = __Infer<typeof StartBuildReducer>;
 export type StartGameParams = __Infer<typeof StartGameReducer>;
 export type SubmitPromptParams = __Infer<typeof SubmitPromptReducer>;
+export type TitheParams = __Infer<typeof TitheReducer>;
 export type UpdateTransformParams = __Infer<typeof UpdateTransformReducer>;
 

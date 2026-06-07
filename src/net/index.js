@@ -81,6 +81,7 @@ export class NetClient {
     this._huntTimer = 0;     // continuous seconds inside catch-range
     this._deathReported = false;
     this._vignette = null;
+    this._tithe = null;      // bottom-center 'buy mercy' TITHE control (lazy DOM)
     this.amDead = false;     // eliminated this match (spectating) — read by main.js
     this._connectTimer = null;
   }
@@ -109,6 +110,7 @@ export class NetClient {
           .subscribe([
             'SELECT * FROM player', 'SELECT * FROM room',
             'SELECT * FROM predator', 'SELECT * FROM sabotage_event', 'SELECT * FROM director_log',
+            'SELECT * FROM favor_ledger',
           ]);
         // A survival join may have been queued before connect; init now if so.
         if (this.mode === 'survival') this._initSurvival();
@@ -183,11 +185,14 @@ export class NetClient {
     this._deathReported = false;
     this.amDead = false;
     this._setVignette(false);
+    this._setTithe(false);
     if (this.course && this.course.clear) this.course.clear();
     if (this.survCourse && this.survCourse.clear) this.survCourse.clear();
   }
   reportFinish() { if (this.connected) this.conn.reducers.reportFinish({}); }
   reportDeath() { if (this.connected) this.conn.reducers.reportDeath({}); }
+  /** Survival: covertly spend `amount` of my score into my private favor_ledger row to buy down the hunt. */
+  tithe(amount) { if (this.connected) this.conn.reducers.tithe({ amount }); }
 
   /** My own player row from the live cache (or null). */
   _myRow() {
@@ -312,6 +317,15 @@ export class NetClient {
     return null;
   }
 
+  /** MY favor_ledger row for a given room id (or null). Private table → only my row is here. */
+  _favorRow(roomId) {
+    if (!this.conn || roomId === 0n) return null;
+    for (const f of this.conn.db.favorLedger.iter()) {
+      if (f.roomId === roomId && f.identity.toHexString() === this.identityHex) return f;
+    }
+    return null;
+  }
+
   /** Lazily create + return the red HUNTED vignette DOM element. */
   _ensureVignette() {
     if (this._vignette || typeof document === 'undefined') return this._vignette;
@@ -343,6 +357,72 @@ export class NetClient {
   }
 
   /**
+   * Lazily create + return the covert TITHE control (survival 'buy mercy').
+   * Bottom-center dark pill: a button that spends 50 score → favor, plus a live
+   * readout of my favor + score. All text via textContent → XSS-safe.
+   */
+  _ensureTithe() {
+    if (this._tithe || typeof document === 'undefined') return this._tithe;
+    if (!document.getElementById('flk-tithe-style')) {
+      const style = document.createElement('style');
+      style.id = 'flk-tithe-style';
+      style.textContent = `
+        .flk-tithe{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+          z-index:1250;pointer-events:auto;display:none;flex-direction:column;
+          align-items:center;gap:5px;font-family:system-ui,-apple-system,sans-serif}
+        .flk-tithe-btn{appearance:none;cursor:pointer;border:1px solid #5a4a16;
+          border-radius:999px;background:rgba(18,16,8,.86);color:#f4e6b0;
+          font-size:13px;font-weight:700;letter-spacing:.3px;padding:8px 16px;
+          box-shadow:0 8px 22px rgba(0,0,0,.5);transition:background .15s ease,opacity .15s ease}
+        .flk-tithe-btn:hover:not(:disabled){background:rgba(40,34,12,.92)}
+        .flk-tithe-btn:disabled{opacity:.4;cursor:default}
+        .flk-tithe-read{font-size:11px;color:#cfc28a;letter-spacing:.4px;
+          text-shadow:0 1px 3px rgba(0,0,0,.7)}
+      `;
+      document.head.appendChild(style);
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'flk-tithe';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'flk-tithe-btn';
+    btn.textContent = '🪶 TITHE 50 → buy mercy';
+    // Click only — never steals game keys (no key listeners). Prevent the click
+    // from bubbling to canvas/game handlers just in case.
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!btn.disabled) this.tithe(50);
+    });
+
+    const read = document.createElement('div');
+    read.className = 'flk-tithe-read';
+    read.textContent = 'favor 0 · score 0';
+
+    wrap.appendChild(btn);
+    wrap.appendChild(read);
+    document.body.appendChild(wrap);
+    this._tithe = { wrap, btn, read };
+    return this._tithe;
+  }
+
+  _setTithe(on) {
+    const t = this._ensureTithe();
+    if (t) t.wrap.style.display = on ? 'flex' : 'none';
+  }
+
+  /** Refresh the TITHE readout + button-enabled state from my live rows. */
+  _updateTithe(score, favor) {
+    const t = this._tithe;
+    if (!t) return;
+    const s = Math.max(0, Math.floor(score));
+    const f = Math.max(0, Math.round(favor));
+    t.read.textContent = `favor ${f} · score ${s}`;
+    t.btn.disabled = s < 50;
+  }
+
+  /**
    * Survival-mode driver: mirrors _driveCreative's world application, then adds
    * the predator hawk, sabotage FX, proximity elimination, and HUNTED vignette.
    * Creative mode is never touched by this path.
@@ -361,6 +441,7 @@ export class NetClient {
       // Not racing → no predator, reset per-match elimination/vignette state.
       this.predator.reconcile(null, dt, camera);
       this._setVignette(false);
+      this._setTithe(false);
       this._survWorldApplied = false;
       this._huntTimer = 0;
       this._deathReported = false;
@@ -388,6 +469,17 @@ export class NetClient {
         this.reportFinish();
         console.log('[net] survival course complete → reportFinish');
       }
+    }
+
+    // Covert TITHE control: visible only while alive & playing. Drives off my
+    // live player score + my private favor_ledger row.
+    if (!this.amDead) {
+      this._setTithe(true);
+      const myRow = this._myRow();
+      const favRow = this._favorRow(room.id);
+      this._updateTithe(myRow ? myRow.score : 0, favRow ? favRow.favor : 0);
+    } else {
+      this._setTithe(false);
     }
 
     // Predator render + proximity elimination.

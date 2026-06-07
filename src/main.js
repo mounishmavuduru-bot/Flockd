@@ -28,6 +28,7 @@ import { getBiomeForLevel, applyBiome } from './world/Biomes.js';
 import { SoundFX } from './audio/SoundFX.js';
 import { NetClient } from './net/index.js';
 import { MenuShell } from './shell/MenuShell.js';
+import { createPostFX } from './fx/PostFX.js';
 // Mobile imports — MobileInput class stays lazy, but detect mobile synchronously
 // so desktop-only init (ringRush.start, initWebcam) doesn't fire on iPhones.
 let MobileInput, MobileUI;
@@ -61,6 +62,34 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 20, 0);
 controls.enableDamping = true;
 controls.dampingFactor = 0.1;
+
+// --- Post-processing (the single biggest visual upgrade) ---
+// TSL pipeline: scene pass → bloom → vignette → filmic grade → film grain.
+// MUST degrade gracefully: TSL/PostProcessing only works on a node-capable
+// backend (WebGPU, or WebGPU's WebGL2 fallback). On ANY construction failure
+// — or `?fx=off` — we leave postFX null and the loop renders normally via
+// renderer.render(scene, camera).
+let postFX = null;
+if (new URLSearchParams(location.search).get('fx') !== 'off') {
+  try {
+    postFX = createPostFX(renderer, scene, camera);
+    console.log('[postFX] post-processing pipeline active (bloom + vignette + grade + grain)');
+  } catch (err) {
+    postFX = null;
+    console.warn('[postFX] disabled — post-processing unavailable on this backend:', err);
+  }
+}
+window.__postFX = postFX;
+
+// Keep post-processing sized with the window. Mirrors the camera-aspect resize
+// handled in Renderer.js (_attachResizeHandlers via window.__camera): when the
+// window resizes, push the new dimensions through to the FX pipeline so the
+// scene pass / bloom render targets stay matched to the canvas.
+if (postFX) {
+  window.addEventListener('resize', () => {
+    postFX.setSize(window.innerWidth, window.innerHeight);
+  });
+}
 
 // --- Build the world ---
 // ?seed=N makes the world deterministic (same terrain + tree/house placement
@@ -703,7 +732,8 @@ loop.onUpdate((dt) => {
   if (net) net.update(dt, camera);
   setSpectate(!!(net && net.amDead));
 
-  renderer.render(scene, camera);
+  if (postFX && postFX.enabled) postFX.render();
+  else renderer.render(scene, camera);
 });
 loop.start();
 

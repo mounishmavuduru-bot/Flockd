@@ -23,6 +23,14 @@ export const DirectorLog = __t.object("DirectorLog", {
 });
 export type DirectorLog = __Infer<typeof DirectorLog>;
 
+export const FavorLedger = __t.object("FavorLedger", {
+  identity: __t.identity(),
+  roomId: __t.u64(),
+  favor: __t.f32(),
+  updatedAt: __t.timestamp(),
+});
+export type FavorLedger = __Infer<typeof FavorLedger>;
+
 export const LobbyPrompt = __t.object("LobbyPrompt", {
   id: __t.u64(),
   roomId: __t.u64(),

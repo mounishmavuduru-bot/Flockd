@@ -140,6 +140,7 @@ function connect() {
           'SELECT * FROM player',
           'SELECT * FROM predator',
           'SELECT * FROM sidecar',
+          'SELECT * FROM favor_ledger',
         ]);
       setInterval(() => {
         sweep(conn);
