@@ -139,17 +139,21 @@ async function generateWithClaude(prompts: string[], seed: number): Promise<Leve
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic();
   const userText = `Seed: ${seed}. Player prompt fragments: ${prompts.map((p) => `"${p}"`).join(', ') || '(none — surprise the players)'}. Generate the level.`;
+  // Forced tool_use is the reliable structured-output path: it accepts the full
+  // JSON Schema (incl. minItems/maxItems on the rings array), unlike
+  // output_config.format which rejects minItems>1. We fall back to mock on any
+  // error, so a hiccup never blocks a match.
   const res: any = await client.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 1500,
     system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+    tools: [{ name: 'emit_level', description: 'Emit the FLOCKED level config the game will render.', input_schema: LEVEL_SCHEMA as any }],
+    tool_choice: { type: 'tool', name: 'emit_level' },
     messages: [{ role: 'user', content: userText }],
-    // Structured outputs (GA). Field name may need a tweak per SDK version —
-    // we fall back to mock on any error, so this never blocks a match.
-    output_config: { format: { type: 'json_schema', schema: LEVEL_SCHEMA } },
   } as any);
-  const block = res.content.find((b: any) => b.type === 'text') || res.content[0];
-  return clampLevel(JSON.parse(block.text));
+  const tu = res.content.find((b: any) => b.type === 'tool_use');
+  if (!tu || !tu.input) throw new Error('no tool_use block in Claude response');
+  return clampLevel(tu.input as LevelConfig);
 }
 
 export async function generateWorld(prompts: string[], seed: number): Promise<LevelConfig> {
