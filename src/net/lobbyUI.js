@@ -10,7 +10,7 @@
 const PALETTE = ['#ff5a5f', '#3fa7ff', '#5ad469', '#ffd23f', '#b06bff', '#ff8c42', '#2ec4b6', '#f15bb5'];
 
 const CSS = `
-.flk-lobby{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+.flk-lobby{position:fixed;inset:0;z-index:1500;display:flex;align-items:center;justify-content:center;
   background:rgba(8,12,22,.72);backdrop-filter:blur(6px);font-family:system-ui,-apple-system,sans-serif;color:#eaf2ff}
 .flk-card{width:min(440px,92vw);background:#121a2b;border:1px solid #243352;border-radius:16px;
   padding:22px 22px 20px;box-shadow:0 24px 60px rgba(0,0,0,.5)}

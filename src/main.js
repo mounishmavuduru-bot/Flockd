@@ -380,7 +380,7 @@ if (roomCode) {
   const savedName = (() => { try { return localStorage.getItem('flockd.name'); } catch { return null; } })();
   const savedColor = (() => { try { return parseInt(localStorage.getItem('flockd.color'), 10) || 0; } catch { return 0; } })();
 
-  net = new NetClient({ scene, localState: flightState, flightPhysics, onState: handleNetState });
+  net = new NetClient({ scene, localState: flightState, flightPhysics, onState: handleNetState, onError: handleNetError });
   shell = new MenuShell({
     palette: FLOCK_PALETTE,
     name: savedName,
@@ -422,6 +422,24 @@ if (roomCode) {
     }
   });
 
+  function showToast(msg) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;left:50%;top:74px;transform:translateX(-50%);z-index:2700;'
+      + 'background:rgba(180,30,30,.92);color:#fff;padding:10px 16px;border-radius:10px;'
+      + 'font:600 13px system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:90vw;text-align:center';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 4500);
+  }
+  // Connect failure / drop → bail the spinner back to the menu with a notice. This is
+  // what a visitor hits on the deployed site until the STDB module is on maincloud.
+  function handleNetError(reason) {
+    if (!shell) return;
+    shell.returnToMenu();
+    uiState = 'menu';
+    showToast(reason === 'timeout' ? "Can't reach the game server — it may be offline." : 'Connection lost.');
+  }
+
   // React to room-state changes to move between menu / waiting-room / world.
   let uiState = 'menu';
   let wasInRoom = false;
@@ -434,6 +452,14 @@ if (roomCode) {
       return;
     }
     wasInRoom = true;
+    if (info.roomState === 'over') {
+      if (uiState !== 'results') {
+        const rows = (info.roster || []).slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+        shell.showResults({ rows, onAgain: () => net.leave() });
+        uiState = 'results';
+      }
+      return;
+    }
     const survivalWaiting = info.mode === 'survival' && info.roomState !== 'playing';
     if (survivalWaiting) {
       if (uiState !== 'waiting') {
@@ -568,6 +594,19 @@ hud.hint.innerHTML = 'SPACE = Flap &nbsp;|&nbsp; A/D = Turn &nbsp;|&nbsp; W = Di
 // Debug panel removed — use webcam overlay for pose debugging
 
 // --- Game Loop ---
+let spectateBanner = null;
+function setSpectate(on) {
+  if (on && !spectateBanner) {
+    spectateBanner = document.createElement('div');
+    spectateBanner.textContent = '☠ ELIMINATED — spectating';
+    spectateBanner.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);'
+      + 'z-index:1300;color:#ff6b6b;font:800 30px system-ui,sans-serif;letter-spacing:3px;'
+      + 'pointer-events:none;text-shadow:0 0 18px rgba(255,40,40,.7)';
+    document.body.appendChild(spectateBanner);
+  }
+  if (spectateBanner) spectateBanner.style.display = on ? 'block' : 'none';
+}
+
 const loop = new GameLoop();
 loop.onUpdate((dt) => {
   world.update(dt, camera, flightState.altitude);
@@ -588,6 +627,9 @@ loop.onUpdate((dt) => {
     // Update input (autopilot overrides if active)
     input.update(dt);
     autopilot.update(dt, input);
+
+    // Eliminated → spectate: freeze flight controls (bird glides; can't score).
+    if (net && net.amDead) { input.lift = 0; input.roll = 0; input.pitch = 0; }
 
     // Mobile gyro input overrides when active
     if (mobileInput && mobileInput.active) {
@@ -659,6 +701,7 @@ loop.onUpdate((dt) => {
 
   // Multiplayer: push my transform (throttled) + render remote birds.
   if (net) net.update(dt, camera);
+  setSpectate(!!(net && net.amDead));
 
   renderer.render(scene, camera);
 });

@@ -117,7 +117,7 @@ function steerTick(conn: any, roomId: bigint): void {
     nx = pred.x + (dx / gap) * move;
     ny = pred.y + (dy / gap) * move;
     nz = pred.z + (dz / gap) * move;
-    yaw = Math.atan2(dx, dz); // face travel/target direction
+    yaw = Math.atan2(-dx, -dz); // face travel dir (client fwd = (-sin yaw,0,-cos yaw))
   } else {
     // No target: slow patrol orbit around the origin.
     h.patrolAngle += 0.4 * (STEER_MS / 1000);
@@ -131,7 +131,7 @@ function steerTick(conn: any, roomId: bigint): void {
     nx = pred.x + (dx / gap) * move;
     ny = pred.y + (dy / gap) * move;
     nz = pred.z + (dz / gap) * move;
-    yaw = Math.atan2(dx, dz);
+    yaw = Math.atan2(-dx, -dz);
   }
 
   conn.reducers.movePredator({

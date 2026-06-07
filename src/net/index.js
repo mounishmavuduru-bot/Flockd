@@ -46,10 +46,11 @@ export class NetClient {
    * @param {string} [opts.uri]
    * @param {string} [opts.dbName]
    */
-  constructor({ scene, localState, onState, flightPhysics, uri, dbName } = {}) {
+  constructor({ scene, localState, onState, onError, flightPhysics, uri, dbName } = {}) {
     this.scene = scene;
     this.localState = localState;
     this.onState = onState;
+    this.onError = onError || null;
     this.flightPhysics = flightPhysics || null;
     this.uri = uri || defaultUri();
     this.dbName = dbName || DB_NAME;
@@ -80,13 +81,26 @@ export class NetClient {
     this._huntTimer = 0;     // continuous seconds inside catch-range
     this._deathReported = false;
     this._vignette = null;
+    this.amDead = false;     // eliminated this match (spectating) — read by main.js
+    this._connectTimer = null;
   }
 
   connect() {
+    // Guaranteed escape from the "Connecting…" screen if the server is unreachable
+    // (e.g. the deployed site before the module is on maincloud).
+    if (this._connectTimer) clearTimeout(this._connectTimer);
+    this._connectTimer = setTimeout(() => {
+      if (!this.connected) {
+        console.warn('[net] connect timeout');
+        if (this.onError) this.onError('timeout');
+      }
+    }, 9000);
+
     this.conn = connectToFlocked({
       uri: this.uri,
       dbName: this.dbName,
       onConnect: (conn, identity) => {
+        if (this._connectTimer) { clearTimeout(this._connectTimer); this._connectTimer = null; }
         this.identity = identity;
         this.identityHex = identity.toHexString();
         this.connected = true;
@@ -109,8 +123,13 @@ export class NetClient {
         this.myRoomId = 0n;
         this.remote.clear();
         console.warn('[net] disconnected');
+        if (this.onError) this.onError('disconnected');
       },
-      onError: (err) => { console.warn('[net] connect error:', err); },
+      onError: (err) => {
+        console.warn('[net] connect error:', err);
+        if (this._connectTimer) { clearTimeout(this._connectTimer); this._connectTimer = null; }
+        if (this.onError) this.onError('error');
+      },
     });
   }
 
@@ -155,7 +174,18 @@ export class NetClient {
   setColor(color) { this.color = color % 8; if (this.connected) this.conn.reducers.setColor({ color: this.color }); }
   startGame() { if (this.connected) this.conn.reducers.startGame({}); }
   startBuild() { if (this.connected) this.conn.reducers.startBuild(); }
-  leave() { if (this.connected) this.conn.reducers.leaveRoom({}); }
+  leave() {
+    if (this.connected) this.conn.reducers.leaveRoom({});
+    // Reset per-match state so the NEXT match starts clean (no stale world/eliminated flags).
+    this.worldApplied = false;
+    this._survWorldApplied = false;
+    this._huntTimer = 0;
+    this._deathReported = false;
+    this.amDead = false;
+    this._setVignette(false);
+    if (this.course && this.course.clear) this.course.clear();
+    if (this.survCourse && this.survCourse.clear) this.survCourse.clear();
+  }
   reportFinish() { if (this.connected) this.conn.reducers.reportFinish({}); }
   reportDeath() { if (this.connected) this.conn.reducers.reportDeath({}); }
 
@@ -188,9 +218,12 @@ export class NetClient {
     this.myRoomId = myRow ? myRow.roomId : 0n;
     const room = this._room(this.myRoomId);
 
-    // 1) Push my transform (throttled, only while in a room).
+    // Eliminated this match? main.js reads this to freeze control + show a banner.
+    this.amDead = !!(myRow && room && room.state === 'playing' && myRow.alive === false);
+
+    // 1) Push my transform (throttled, only while alive in a room).
     const now = performance.now();
-    if (this.myRoomId !== 0n && now - this._lastSend >= SEND_INTERVAL_MS) {
+    if (this.myRoomId !== 0n && !this.amDead && now - this._lastSend >= SEND_INTERVAL_MS) {
       this._lastSend = now;
       const s = this.localState;
       this.conn.reducers.updateTransform({
@@ -207,7 +240,7 @@ export class NetClient {
         if (r.roomId !== this.myRoomId || !r.online) continue;
         const me = r.identity.toHexString() === this.identityHex;
         const host = !!(room && room.host.toHexString() === r.identity.toHexString());
-        roster.push({ name: r.name, color: r.color, me, host });
+        roster.push({ name: r.name, color: r.color, me, host, score: r.score, finished: r.finished, alive: r.alive });
         if (!me) remoteRows.push(r);
       }
     }
@@ -367,9 +400,10 @@ export class NetClient {
       try { targetHex = pRow.targetPlayer.toHexString(); } catch { targetHex = null; }
       this._setVignette(targetHex === this.identityHex);
 
-      // Continuous-proximity elimination.
+      // Continuous-proximity elimination — only once the hunt has actually begun
+      // (never during 'patrol' / at spawn), so nobody dies before the chase.
       const dist = this.predator.getPosition().distanceTo(this.localState.position);
-      if (dist < CATCH_RADIUS) {
+      if (dist < CATCH_RADIUS && pRow.behavior !== 'patrol' && !this._deathReported) {
         this._huntTimer += dt;
         if (this._huntTimer >= CATCH_SECONDS && !this._deathReported) {
           this._deathReported = true;
