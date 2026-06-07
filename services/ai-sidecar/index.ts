@@ -12,6 +12,8 @@
  * Run: npm run sidecar   (needs local STDB running + module published)
  */
 import 'dotenv/config';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { DbConnection } from '../../src/net/bindings';
 import { generateWorld } from './worldgen';
 import { startSurvivalDirector, stopSurvivalDirector } from './survival';
@@ -23,6 +25,16 @@ const SWEEP_MS = 500;
 const inFlight = new Set<string>();
 // Rooms whose survival director loops are currently running (keyed by roomId string).
 const survivalStarted = new Set<string>();
+
+// Persist the sidecar's STDB identity token so it reconnects as the SAME identity
+// across restarts — required for the server's claimSidecar() gate to keep working.
+const TOKEN_FILE = resolve(process.cwd(), '.sidecar-token');
+function loadToken(): string | undefined {
+  try { return existsSync(TOKEN_FILE) ? readFileSync(TOKEN_FILE, 'utf8').trim() || undefined : undefined; } catch { return undefined; }
+}
+function saveToken(tok: string) {
+  try { writeFileSync(TOKEN_FILE, tok, 'utf8'); } catch (e: any) { console.warn('[sidecar] could not persist token:', e?.message || e); }
+}
 
 function findWorldConfig(conn: any, roomId: bigint) {
   for (const w of conn.db.worldConfig.iter()) if (w.roomId === roomId) return w;
@@ -110,11 +122,15 @@ function survivalSweep(conn: any) {
 }
 
 function connect() {
-  DbConnection.builder()
-    .withUri(URI)
-    .withDatabaseName(DB)
-    .onConnect((conn: any, identity: any) => {
+  const builder = DbConnection.builder().withUri(URI).withDatabaseName(DB);
+  const saved = loadToken();
+  if (saved) builder.withToken(saved);
+  builder
+    .onConnect((conn: any, identity: any, token: string) => {
+      if (token) saveToken(token);
       console.log('[sidecar] connected as', identity.toHexString().slice(0, 8));
+      // Register as THE sidecar so identity-gated survival/world reducers accept us.
+      try { conn.reducers.claimSidecar(); } catch (e: any) { console.warn('[sidecar] claimSidecar failed:', e?.message || e); }
       conn.subscriptionBuilder()
         .onApplied(() => console.log('[sidecar] subscribed; watching for building/playing rooms'))
         .subscribe([
@@ -123,6 +139,7 @@ function connect() {
           'SELECT * FROM world_config',
           'SELECT * FROM player',
           'SELECT * FROM predator',
+          'SELECT * FROM sidecar',
         ]);
       setInterval(() => {
         sweep(conn);

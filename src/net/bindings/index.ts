@@ -34,6 +34,7 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ClaimSidecarReducer from "./claim_sidecar_reducer";
 import DespawnPredatorReducer from "./despawn_predator_reducer";
 import EmitSabotageReducer from "./emit_sabotage_reducer";
 import JoinRoomReducer from "./join_room_reducer";
@@ -60,6 +61,7 @@ import PlayerRow from "./player_table";
 import PredatorRow from "./predator_table";
 import RoomRow from "./room_table";
 import SabotageEventRow from "./sabotage_event_table";
+import SidecarRow from "./sidecar_table";
 import WorldConfigRow from "./world_config_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -149,6 +151,17 @@ const tablesSchema = __schema({
     ],
     event: true,
   }, SabotageEventRow),
+  sidecar: __table({
+    name: 'sidecar',
+    indexes: [
+      { accessor: 'id', name: 'sidecar_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+    ],
+    constraints: [
+      { name: 'sidecar_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, SidecarRow),
   worldConfig: __table({
     name: 'world_config',
     indexes: [
@@ -164,6 +177,7 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("claim_sidecar", ClaimSidecarReducer),
   __reducerSchema("despawn_predator", DespawnPredatorReducer),
   __reducerSchema("emit_sabotage", EmitSabotageReducer),
   __reducerSchema("join_room", JoinRoomReducer),

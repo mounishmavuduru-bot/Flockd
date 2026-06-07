@@ -15,6 +15,9 @@ agentdb.rvf
 agentdb.rvf.lock
 _probe_*.ts
 
+# sidecar STDB identity token (privileged) — never commit
+.sidecar-token
+
 # test artifacts
 chick-*.png
 smoke-*.png

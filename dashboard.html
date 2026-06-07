@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>THE HUNT — FLOCKD AI Director</title>
+  <meta name="description" content="Live read-only dashboard of the Claude-driven survival predator." />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    :root{
+      --bg0:#0a0e22; --bg1:#10122e; --bg2:#1a0f33;
+      --panel:rgba(16,20,40,.62); --panelBorder:rgba(120,140,220,.18);
+      --ink:#eaf2ff; --muted:#9fb2d8; --dim:#5d6f95;
+      --neon:#b06bff; --neon2:#7fa6ff; --blood:#ff4d4d; --good:#4be38a;
+      --mono:'SFMono-Regular',ui-monospace,'JetBrains Mono','Fira Mono',Menlo,Consolas,monospace;
+      --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    }
+    html,body{width:100%;min-height:100%;background:var(--bg1);color:var(--ink);font-family:var(--sans)}
+    body{
+      min-height:100vh;
+      background:
+        radial-gradient(1200px 700px at 80% -6%, rgba(176,107,255,.28), transparent 60%),
+        radial-gradient(1100px 800px at 8% 100%, rgba(63,167,255,.18), transparent 60%),
+        linear-gradient(160deg,var(--bg0) 0%,var(--bg1) 42%,var(--bg2) 100%);
+      background-attachment:fixed;
+      -webkit-font-smoothing:antialiased;
+      padding:0 0 48px;
+    }
+    a{color:var(--neon2);text-decoration:none}
+    ::selection{background:rgba(176,107,255,.4)}
+    /* thin neon scrollbars */
+    *::-webkit-scrollbar{width:8px;height:8px}
+    *::-webkit-scrollbar-thumb{background:rgba(127,166,255,.28);border-radius:8px}
+    *::-webkit-scrollbar-track{background:transparent}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/dashboard/main.js"></script>
+</body>
+</html>

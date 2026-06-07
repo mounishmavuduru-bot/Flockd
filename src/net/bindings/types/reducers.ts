@@ -6,6 +6,7 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ClaimSidecarReducer from "../claim_sidecar_reducer";
 import DespawnPredatorReducer from "../despawn_predator_reducer";
 import EmitSabotageReducer from "../emit_sabotage_reducer";
 import JoinRoomReducer from "../join_room_reducer";
@@ -23,6 +24,7 @@ import StartGameReducer from "../start_game_reducer";
 import SubmitPromptReducer from "../submit_prompt_reducer";
 import UpdateTransformReducer from "../update_transform_reducer";
 
+export type ClaimSidecarParams = __Infer<typeof ClaimSidecarReducer>;
 export type DespawnPredatorParams = __Infer<typeof DespawnPredatorReducer>;
 export type EmitSabotageParams = __Infer<typeof EmitSabotageReducer>;
 export type JoinRoomParams = __Infer<typeof JoinRoomReducer>;

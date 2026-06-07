@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import { readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, relative, sep, resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Lightweight, dependency-free PWA: after the production build, walk the
 // output dir, precache every shipped file, and emit a hand-written service
@@ -64,6 +66,14 @@ export default defineConfig({
     // Top-level await needed for WebGPURenderer.init() in src/main.js.
     // es2022 targets Chrome 91+/Safari 15+/Firefox 89+ — matches our mobile support.
     target: 'es2022',
+    // Multi-page: ship the game (index.html) AND the judge-facing AI dashboard
+    // (dashboard.html → src/dashboard/main.js) in the same build.
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        dashboard: resolve(__dirname, 'dashboard.html'),
+      },
+    },
   },
   server: {
     open: true,

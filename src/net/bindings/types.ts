@@ -91,6 +91,13 @@ export const SabotageEvent = __t.object("SabotageEvent", {
 });
 export type SabotageEvent = __Infer<typeof SabotageEvent>;
 
+export const Sidecar = __t.object("Sidecar", {
+  id: __t.u64(),
+  identity: __t.identity(),
+  updatedAt: __t.timestamp(),
+});
+export type Sidecar = __Infer<typeof Sidecar>;
+
 export const TickTimer = __t.object("TickTimer", {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
