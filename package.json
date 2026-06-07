@@ -12,16 +12,19 @@
     "stdb:publish:local": "spacetime publish flocked --server local --module-path server/spacetimedb -y",
     "stdb:build": "spacetime build --module-path server/spacetimedb",
     "stdb:start": "spacetime start",
-    "sidecar": "node services/ai-sidecar/index.js"
+    "sidecar": "tsx services/ai-sidecar/index.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
     "@mediapipe/tasks-vision": "^0.10.34",
+    "dotenv": "^17.4.2",
     "lil-gui": "^0.21.0",
     "spacetimedb": "2.4.0",
     "three": "^0.184.0"
   },
   "devDependencies": {
     "playwright": "^1.59.1",
+    "tsx": "^4.22.4",
     "vite": "^5.4.21"
   }
 }

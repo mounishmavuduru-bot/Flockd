@@ -26,12 +26,13 @@ Vertical-slice-first: demoable at every phase. Forked flight core already runs.
 - onConnect should restore room membership / onDisconnect grace timer
 
 ## Phase 2 — Creative mode + LLM #1 (co-authored world)
-- [ ] Lobby UI: room code, join, prompt box, "ready"/start
-- [ ] Reducers: `submit_prompt`, `start_build`, `set_world_config`, `start_game`
-- [ ] AI sidecar: subscribe → on `building`, fuse prompts → Claude structured level JSON → `set_world_config`
-- [ ] `WorldBuilder` consumes `world_config` (theme/seed/obstacles)
-- [ ] "Forging your world…" lobby screen (hides latency)
-- [ ] **Slice demo:** group types prompts → Claude builds one world → everyone races it
+- [x] Tables: `lobby_prompt`, `world_config`; reducers `submit_prompt`, `start_build`, `set_world_config` (+ `beginPlaying` helper)
+- [x] AI sidecar (`services/ai-sidecar/`): subscribe → on `building`, fuse prompts → world JSON → `set_world_config` → room goes `playing`
+- [x] `worldgen.ts`: deterministic MOCK generator + Claude Haiku 4.5 path (structured output, prompt cache), drop-in via `ANTHROPIC_API_KEY`
+- [x] **Verified:** `test/creative-smoke.ts` — prompt "spooky frozen narrow canyons at night" → theme=night, 14 rings, synced + room `playing` in 300ms. PASS
+- [ ] Lobby UI (client): room code, player list, prompt box, host "Forge World" + "Forging your world…" screen
+- [ ] Client consumes `world_config`: apply sky/fog/water palette + spawn the ring course; race = fly the rings
+- [ ] **Slice demo:** group types prompts → world recolors + course appears → everyone races it
 
 ## Phase 3 — Survival mode + LLM #2 (battle royale + predator)
 - [ ] Battle-royale rules in `survival.js` (last-bird/first-finish, elimination)

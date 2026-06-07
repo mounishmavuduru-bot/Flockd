@@ -10,6 +10,15 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const LobbyPrompt = __t.object("LobbyPrompt", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  player: __t.identity(),
+  text: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type LobbyPrompt = __Infer<typeof LobbyPrompt>;
+
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   roomId: __t.u64(),
@@ -48,4 +57,12 @@ export const TickTimer = __t.object("TickTimer", {
   scheduledAt: __t.scheduleAt(),
 });
 export type TickTimer = __Infer<typeof TickTimer>;
+
+export const WorldConfig = __t.object("WorldConfig", {
+  roomId: __t.u64(),
+  json: __t.string(),
+  status: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type WorldConfig = __Infer<typeof WorldConfig>;
 

@@ -39,19 +39,38 @@ import LeaveRoomReducer from "./leave_room_reducer";
 import ReportDeathReducer from "./report_death_reducer";
 import ReportFinishReducer from "./report_finish_reducer";
 import SetNameReducer from "./set_name_reducer";
+import SetWorldConfigReducer from "./set_world_config_reducer";
+import StartBuildReducer from "./start_build_reducer";
 import StartGameReducer from "./start_game_reducer";
+import SubmitPromptReducer from "./submit_prompt_reducer";
 import UpdateTransformReducer from "./update_transform_reducer";
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import LobbyPromptRow from "./lobby_prompt_table";
 import PlayerRow from "./player_table";
 import RoomRow from "./room_table";
+import WorldConfigRow from "./world_config_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  lobbyPrompt: __table({
+    name: 'lobby_prompt',
+    indexes: [
+      { accessor: 'id', name: 'lobby_prompt_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'roomId', name: 'lobby_prompt_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'lobby_prompt_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, LobbyPromptRow),
   player: __table({
     name: 'player',
     indexes: [
@@ -81,6 +100,17 @@ const tablesSchema = __schema({
       { name: 'room_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RoomRow),
+  worldConfig: __table({
+    name: 'world_config',
+    indexes: [
+      { accessor: 'roomId', name: 'world_config_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'world_config_room_id_key', constraint: 'unique', columns: ['roomId'] },
+    ],
+  }, WorldConfigRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -90,7 +120,10 @@ const reducersSchema = __reducers(
   __reducerSchema("report_death", ReportDeathReducer),
   __reducerSchema("report_finish", ReportFinishReducer),
   __reducerSchema("set_name", SetNameReducer),
+  __reducerSchema("set_world_config", SetWorldConfigReducer),
+  __reducerSchema("start_build", StartBuildReducer),
   __reducerSchema("start_game", StartGameReducer),
+  __reducerSchema("submit_prompt", SubmitPromptReducer),
   __reducerSchema("update_transform", UpdateTransformReducer),
 );
 

@@ -11,7 +11,10 @@ import LeaveRoomReducer from "../leave_room_reducer";
 import ReportDeathReducer from "../report_death_reducer";
 import ReportFinishReducer from "../report_finish_reducer";
 import SetNameReducer from "../set_name_reducer";
+import SetWorldConfigReducer from "../set_world_config_reducer";
+import StartBuildReducer from "../start_build_reducer";
 import StartGameReducer from "../start_game_reducer";
+import SubmitPromptReducer from "../submit_prompt_reducer";
 import UpdateTransformReducer from "../update_transform_reducer";
 
 export type JoinRoomParams = __Infer<typeof JoinRoomReducer>;
@@ -19,6 +22,9 @@ export type LeaveRoomParams = __Infer<typeof LeaveRoomReducer>;
 export type ReportDeathParams = __Infer<typeof ReportDeathReducer>;
 export type ReportFinishParams = __Infer<typeof ReportFinishReducer>;
 export type SetNameParams = __Infer<typeof SetNameReducer>;
+export type SetWorldConfigParams = __Infer<typeof SetWorldConfigReducer>;
+export type StartBuildParams = __Infer<typeof StartBuildReducer>;
 export type StartGameParams = __Infer<typeof StartGameReducer>;
+export type SubmitPromptParams = __Infer<typeof SubmitPromptReducer>;
 export type UpdateTransformParams = __Infer<typeof UpdateTransformReducer>;
 

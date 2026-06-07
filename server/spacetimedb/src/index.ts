@@ -70,7 +70,30 @@ const tickTimer = table(
   }
 );
 
-const spacetimedb = schema({ room, player, tickTimer });
+/** Creative mode: per-player prompt fragments collected in the lobby. */
+const lobbyPrompt = table(
+  { name: 'lobby_prompt', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64().index('btree'),
+    player: t.identity(),
+    text: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+/** Claude-generated (or mock) level config for a room — written by the AI sidecar. */
+const worldConfig = table(
+  { name: 'world_config', public: true },
+  {
+    roomId: t.u64().primaryKey(), // one config per room
+    json: t.string(), // serialized level config
+    status: t.string(), // 'pending' | 'ready' | 'error'
+    updatedAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({ room, player, tickTimer, lobbyPrompt, worldConfig });
 export default spacetimedb;
 
 // ──────────────────────────── Constants ───────────────────────────
@@ -105,6 +128,33 @@ function spawnPlayerInto(ctx: any, p: any, roomId: bigint, name: string, color: 
 }
 
 // ──────────────────────────── Lifecycle ───────────────────────────
+
+/** Flip a room to 'playing' and reset every member to a clean racing state. */
+function beginPlaying(ctx: any, r: any) {
+  ctx.db.room.id.update({ ...r, state: 'playing', tick: 0n });
+  for (const member of ctx.db.player.roomId.filter(r.id)) {
+    ctx.db.player.identity.update({
+      ...member,
+      x: SPAWN.x,
+      y: SPAWN.y,
+      z: SPAWN.z,
+      alive: true,
+      finished: false,
+      score: 0,
+      updatedAt: ctx.timestamp,
+    });
+  }
+}
+
+/** Insert or update the single world_config row for a room. */
+function upsertWorldConfig(ctx: any, roomId: bigint, json: string, status: string) {
+  const existing = ctx.db.worldConfig.roomId.find(roomId);
+  if (existing) {
+    ctx.db.worldConfig.roomId.update({ ...existing, json, status, updatedAt: ctx.timestamp });
+  } else {
+    ctx.db.worldConfig.insert({ roomId, json, status, updatedAt: ctx.timestamp });
+  }
+}
 
 export const init = spacetimedb.init((ctx) => {
   // Start the recurring heartbeat once, at publish time.
@@ -270,6 +320,49 @@ export const reportDeath = spacetimedb.reducer((ctx) => {
   if (!p || p.roomId === 0n || !p.alive) return;
   ctx.db.player.identity.update({ ...p, alive: false, updatedAt: ctx.timestamp });
 });
+
+// ───────────────────────── Creative mode ──────────────────────────
+
+/** Submit / replace this player's lobby prompt fragment. */
+export const submitPrompt = spacetimedb.reducer({ text: t.string() }, (ctx, { text }) => {
+  const p = ctx.db.player.identity.find(ctx.sender);
+  if (!p || p.roomId === 0n) return;
+  const r = ctx.db.room.id.find(p.roomId);
+  if (!r || r.state !== 'lobby') return;
+  const clean = text.trim().slice(0, 140);
+  if (!clean) return;
+  // One prompt per player per room — replace if it already exists.
+  for (const lp of ctx.db.lobbyPrompt.roomId.filter(r.id)) {
+    if (lp.player.equals(ctx.sender)) {
+      ctx.db.lobbyPrompt.id.update({ ...lp, text: clean, createdAt: ctx.timestamp });
+      return;
+    }
+  }
+  ctx.db.lobbyPrompt.insert({ id: 0n, roomId: r.id, player: ctx.sender, text: clean, createdAt: ctx.timestamp });
+});
+
+/** Host kicks off world generation: lobby → building. The AI sidecar reacts. */
+export const startBuild = spacetimedb.reducer((ctx) => {
+  const p = ctx.db.player.identity.find(ctx.sender);
+  if (!p || p.roomId === 0n) throw new Error('not in a room');
+  const r = ctx.db.room.id.find(p.roomId);
+  if (!r) throw new Error('room gone');
+  if (!r.host.equals(ctx.sender)) throw new Error('only the host can build');
+  if (r.state !== 'lobby') return;
+  upsertWorldConfig(ctx, r.id, '', 'pending');
+  ctx.db.room.id.update({ ...r, state: 'building' });
+});
+
+/** Called by the AI sidecar with the generated level JSON → room goes live. */
+export const setWorldConfig = spacetimedb.reducer(
+  { roomId: t.u64(), json: t.string() },
+  (ctx, { roomId, json }) => {
+    const r = ctx.db.room.id.find(roomId);
+    if (!r) return;
+    upsertWorldConfig(ctx, roomId, json, 'ready');
+    beginPlaying(ctx, r);
+  }
+);
 
 // ──────────────────────────── Scheduled ───────────────────────────
 
