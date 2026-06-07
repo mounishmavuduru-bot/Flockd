@@ -29,6 +29,7 @@ import { SoundFX } from './audio/SoundFX.js';
 import { NetClient } from './net/index.js';
 import { MenuShell } from './shell/MenuShell.js';
 import { createPostFX } from './fx/PostFX.js';
+import { loadGlbWorld, WORLDS, worldUrl } from './world/GlbWorld.js';
 // Mobile imports — MobileInput class stays lazy, but detect mobile synchronously
 // so desktop-only init (ringRush.start, initWebcam) doesn't fire on iPhones.
 let MobileInput, MobileUI;
@@ -150,6 +151,7 @@ const urlParams = new URLSearchParams(location.search);
 // direct-join fast path for testing/automation.
 const roomCode = urlParams.get('room');
 const useShell = !roomCode;
+const mapId = urlParams.get('map'); // ?map=sydney|niagara|... loads a GLB world
 if (urlParams.has('x')) flightState.position.x = parseFloat(urlParams.get('x'));
 if (urlParams.has('y')) flightState.position.y = parseFloat(urlParams.get('y'));
 if (urlParams.has('z')) flightState.position.z = parseFloat(urlParams.get('z'));
@@ -171,6 +173,26 @@ flightState.velocity.set(
 );
 if (urlParams.has('mode')) flightState.mode = parseInt(urlParams.get('mode'));
 flightState.altitude = flightState.position.y;
+
+// --- Ground provider: procedural terrain by default; a GLB map swaps it. ---
+let groundProvider = (x, z) => getTerrainHeight(x, z, world.arcs);
+
+// --- GLB map mode (?map=<id>): load a Sketchfab world instead of the terrain. ---
+let glbWorld = null;
+if (mapId && WORLDS[mapId]) {
+  try {
+    console.log(`[map] loading ${mapId}…`);
+    glbWorld = await loadGlbWorld(scene, renderer, worldUrl(mapId));
+    if (world.setProceduralVisible) world.setProceduralVisible(false);
+    groundProvider = glbWorld.groundHeight;
+    flightState.position.set(glbWorld.spawn.x, glbWorld.spawn.y, glbWorld.spawn.z);
+    flightState.altitude = glbWorld.spawn.y;
+    flightState.velocity.set(-Math.sin(flightState.yaw) * 22, 0, -Math.cos(flightState.yaw) * 22);
+    window.__glbWorld = glbWorld;
+    console.log(`[map] ${mapId} ready @ spawn y=${glbWorld.spawn.y.toFixed(0)}`);
+  } catch (e) { console.error('[map] load failed:', e); }
+}
+
 const flightPhysics = new FlightPhysics(flightState);
 const cameraRig = new CameraRig(camera, flightState);
 const birdModel = new BirdModel(scene);
@@ -675,11 +697,7 @@ loop.onUpdate((dt) => {
     }
 
     // Terrain height at current position (needed for physics + collision)
-    const groundY = getTerrainHeight(
-      flightState.position.x,
-      flightState.position.z,
-      world.arcs,
-    );
+    const groundY = groundProvider(flightState.position.x, flightState.position.z);
 
     // Apply controls to physics (mode-dependent)
     const mode = flightState.mode;

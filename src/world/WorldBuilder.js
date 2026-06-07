@@ -73,10 +73,14 @@ export async function buildWorld(scene, renderer) {
     ? createTerrainMaterialNode(textures, terrainParams)
     : createTerrainMaterial(textures, terrainParams);
 
+  // Procedural groups we can hide when a GLB map replaces the terrain.
+  const _procedural = [];
+  const addProc = (g) => { if (g) { scene.add(g); _procedural.push(g); } return g; };
+
   // --- Terrain ---
   console.time('Terrain');
   const { chunks, arcs, group: terrainGroup } = createTerrain(terrainMaterial);
-  scene.add(terrainGroup);
+  addProc(terrainGroup);
   console.timeEnd('Terrain');
 
   // --- Water ---
@@ -92,7 +96,7 @@ export async function buildWorld(scene, renderer) {
   // --- Houses FIRST (so we can exclude trees near buildings) ---
   console.time('Houses');
   const { group: houses, positions: housePositions } = createHouses(arcs);
-  scene.add(houses);
+  addProc(houses);
   // Log building counts
   let totalBuildings = 0;
   houses.traverse(obj => {
@@ -107,7 +111,7 @@ export async function buildWorld(scene, renderer) {
   // --- Hotel Resorts (desktop only — too many meshes for mobile) ---
   if (!IS_MOBILE) {
     const resorts = createHotelResorts(arcs);
-    scene.add(resorts);
+    addProc(resorts);
   }
 
   // --- Forest (red-reddington's L-system instanced forest, MIT) ---
@@ -434,7 +438,7 @@ export async function buildWorld(scene, renderer) {
     forest = built.group;
     rrUpdater = built.updater;
   }
-  scene.add(forest);
+  addProc(forest);
   console.timeEnd('Forest');
 
   // --- Stack-cone conifers (alpine zone, snow-frosted band) ---
@@ -444,7 +448,7 @@ export async function buildWorld(scene, renderer) {
   const coniferCount = Math.round(900 * detailMul);
   const coniferPositions = sampleConiferPositions(arcs, coniferCount);
   const conifers = buildStackConeConifers(coniferPositions, arcs);
-  scene.add(conifers);
+  addProc(conifers);
   console.timeEnd('Conifers');
 
   /**
@@ -466,12 +470,12 @@ export async function buildWorld(scene, renderer) {
     const built = buildRrForest();
     forest = built.group;
     rrUpdater = built.updater;
-    scene.add(forest);
+    addProc(forest);
   }
 
   // --- Biome landmark (lighthouse, pyramid, iceberg, …) ---
   let landmark = createLandmark('Sunny Islands', arcs);
-  if (landmark) scene.add(landmark);
+  addProc(landmark);
 
   function regenerateLandmark(biome) {
     if (landmark) {
@@ -485,7 +489,7 @@ export async function buildWorld(scene, renderer) {
       });
     }
     landmark = createLandmark(biome.name, arcs);
-    if (landmark) scene.add(landmark);
+    addProc(landmark);
   }
 
   // --- Underwater world (reduced on mobile) ---
@@ -533,5 +537,8 @@ export async function buildWorld(scene, renderer) {
     updateForestLOD(camera);
   }
 
-  return { update, arcs, terrainChunks: chunks, regenerateForest, regenerateLandmark };
+  return {
+    update, arcs, terrainChunks: chunks, regenerateForest, regenerateLandmark,
+    setProceduralVisible: (v) => { for (const g of _procedural) if (g) g.visible = v; },
+  };
 }

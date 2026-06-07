@@ -18,6 +18,9 @@ _probe_*.ts
 # sidecar STDB identity token (privileged) — never commit
 .sidecar-token
 
+# heavy GLB world maps (lazy-loaded; hosted on Vercel Blob for deploy)
+public/worlds/
+
 # test artifacts
 chick-*.png
 smoke-*.png
