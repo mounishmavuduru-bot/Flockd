@@ -1,8 +1,12 @@
 /**
- * Creative-mode smoke test — proves the full AI-sidecar loop:
- *   client joins → submits prompt → host startBuild → sidecar generates a
- *   world (mock or Claude) → setWorldConfig → room flips to 'playing' with a
- *   playable ring course synced to the client.
+ * Race build smoke test — proves the full world-gen loop:
+ *   client joins (race) → host startBuild → sidecar generates a world (mock)
+ *   → setWorldConfig → room flips to 'playing' with a playable ring course
+ *   synced to the client.
+ *
+ * (CREATIVE co-author mode was removed. submitPrompt is still called below to
+ * exercise the DEPRECATED-but-retained reducer; the room reaches 'playing' via
+ * startBuild regardless of prompts.)
  *
  * Prereqs: local STDB + module published + sidecar running (npm run sidecar).
  * Run: npx tsx test/creative-smoke.ts
@@ -36,7 +40,7 @@ async function main() {
   const H = await makeClient();
   console.log('[creative] host connected', H.identity.toHexString().slice(0, 8));
 
-  H.conn.reducers.joinRoom({ code: ROOM, name: 'Host', mode: 'creative', color: 0, skin: 'stork' });
+  H.conn.reducers.joinRoom({ code: ROOM, name: 'Host', mode: 'race', color: 0, skin: 'stork' });
   await sleep(400);
   H.conn.reducers.submitPrompt({ text: 'spooky frozen narrow canyons at night' });
   await sleep(300);
@@ -76,7 +80,7 @@ async function main() {
     throw new Error(`FAIL: level has too few rings (${level.rings?.length})`);
   }
 
-  console.log('\n✅ PASS — prompt → sidecar → co-authored world synced; room is live (playing).');
+  console.log('\n✅ PASS — startBuild → sidecar → race world synced; room is live (playing).');
   process.exit(0);
 }
 

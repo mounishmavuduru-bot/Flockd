@@ -27,9 +27,8 @@
  *   onCommit fires with { create, code, name, color, skin, mode }.
  *   onSetSkin(id) fires on bird-picker selection (id is one of the 7 skin ids).
  *
- * Visual language: "cinematic dark + neon" — a layered glass design SYSTEM
- * shared verbatim with the in-room lobby (lobbyUI.js) so the two read as one
- * product. Tokens are declared once as CSS custom properties on #flk2-root.
+ * Visual language: "cinematic dark + neon" — a layered glass design SYSTEM.
+ * Tokens are declared once as CSS custom properties on #flk2-root.
  */
 
 import { BIRDS } from '../flight/AvatarBird.js';
@@ -493,7 +492,7 @@ export class MenuShell {
     let resolvedSkin = (skin != null ? skin : storedSkin);
     this._skin = SKIN_IDS.includes(resolvedSkin) ? resolvedSkin : DEFAULT_SKIN;
 
-    this._mode = 'creative';
+    this._mode = 'race';
     this._pendingCode = null;     // auto-generated code awaiting Create
     this._mounted = false;
     this._onStart = null;
@@ -857,8 +856,8 @@ export class MenuShell {
     modes.className = 'flk2-modes';
     this.el.modeCards = {};
     const defs = [
-      { id: 'creative', icon: ICON.brush, name: 'CREATIVE', desc: 'Co-author the level, then race it together.' },
-      { id: 'survival', icon: ICON.skull, name: 'SURVIVAL', desc: 'Battle royale — an AI predator hunts the leader.' },
+      { id: 'race', icon: '🏁', name: 'RACE', desc: 'First to finish the course wins.' },
+      { id: 'survival', icon: ICON.skull, name: 'SURVIVAL', desc: 'Outfly the hunt — an AI predator stalks the leader.' },
     ];
     for (const d of defs) {
       const card = document.createElement('button');
@@ -1179,7 +1178,7 @@ export class MenuShell {
   }
 
   _selectMode(id) {
-    this._mode = (id === 'survival') ? 'survival' : 'creative';
+    this._mode = (id === 'survival') ? 'survival' : 'race';
     for (const key of Object.keys(this.el.modeCards || {})) {
       this.el.modeCards[key].classList.toggle('flk2-sel', key === this._mode);
     }
@@ -1380,9 +1379,9 @@ export class MenuShell {
     this._text(this.el.waitCode, safeCode);
     // mode pill: crisp glyph + label (textContent for the label, XSS-safe)
     if (this.el.waitMode) {
-      this.el.waitMode.innerHTML = (mode === 'survival') ? ICON.skull : ICON.brush;
+      this.el.waitMode.innerHTML = (mode === 'survival') ? ICON.skull : '🏁';
       const ml = document.createElement('span');
-      ml.textContent = (mode === 'survival') ? 'Survival — outfly the hunt' : 'Creative — co-author the world';
+      ml.textContent = (mode === 'survival') ? 'Survival — outfly the hunt' : 'Race — first to finish';
       this.el.waitMode.appendChild(ml);
     }
 

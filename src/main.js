@@ -438,7 +438,7 @@ window.__renderer = renderer;
 window.__cameraRig = cameraRig;
 
 // --- Multiplayer (SpacetimeDB) ---
-// Opt-in via ?room=CODE  e.g.  ?room=WIND&name=Mounish&mp=creative
+// Opt-in via ?room=CODE  e.g.  ?room=WIND&name=Mounish&mp=race
 // Two tabs with the same ?room= see each other's storks in real time.
 // Press G to start the match as host (resets everyone + scoring).
 let net = null;
@@ -447,7 +447,7 @@ let shell = null;
 if (roomCode) {
   // ---- Fast path (testing/automation): direct join from URL params, no menu. ----
   const playerName = urlParams.get('name') || `Bird${Math.floor(Math.random() * 1000)}`;
-  const mpMode = urlParams.get('mp') === 'survival' ? 'survival' : 'creative';
+  const mpMode = urlParams.get('mp') === 'survival' ? 'survival' : 'race';
   const mpColor = parseInt(urlParams.get('color'), 10) || 0;
   net = new NetClient({
     scene,
@@ -460,7 +460,8 @@ if (roomCode) {
   window.__net = net;
   window.addEventListener('keydown', (e) => {
     if (e.key === 'g' || e.key === 'G') {
-      if (mpMode === 'creative') net.startBuild(); else net.startGame();
+      // Both modes build a world via startBuild(); survival adds the predator on 'playing'.
+      net.startBuild();
     }
   });
   console.log(`[net] joining room "${roomCode}" as ${playerName} (${mpMode})`);
@@ -561,11 +562,13 @@ if (roomCode) {
       }
       return;
     }
-    const survivalWaiting = info.mode === 'survival' && info.roomState !== 'playing';
-    if (survivalWaiting) {
+    // Both modes use the same flow: MenuShell waiting room until 'playing'.
+    const waiting = info.roomState !== 'playing';
+    if (waiting) {
+      const mode = info.mode === 'survival' ? 'survival' : 'race';
       if (uiState !== 'waiting') {
         shell.showWaitingRoom({
-          code: info.roomCode, mode: 'survival', isHost: info.isHost,
+          code: info.roomCode, mode, isHost: info.isHost,
           roster: info.roster || [], onStart: () => net.startBuild(),
         });
         uiState = 'waiting';
@@ -573,8 +576,7 @@ if (roomCode) {
         shell.setRoster(info.roster || []);
       }
     } else if (uiState !== 'ingame') {
-      // Creative lobby is handled by the in-room LobbyUI; survival 'playing' →
-      // reveal the world. Either way, drop the menu overlay.
+      // 'playing' → reveal the world and drop the menu overlay.
       shell.enterGame();
       uiState = 'ingame';
     }

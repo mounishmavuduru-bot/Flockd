@@ -10,12 +10,11 @@
  * Usage (from main.js):
  *   const net = new NetClient({ scene, localState: flightState });
  *   net.connect();
- *   net.join({ code: 'WIND', name: 'Mounish', mode: 'creative' });
+ *   net.join({ code: 'WIND', name: 'Mounish', mode: 'race' });
  *   // in the per-frame loop:  net.update(dt, camera);
  */
 import { connectToFlocked } from './connection.js';
 import { RemoteBirds } from './remoteBirds.js';
-import { LobbyUI } from './lobbyUI.js';
 import { RingCourse, applyPalette } from './applyWorld.js';
 import { Predator } from './predator.js';
 import { SabotageFX } from './sabotage.js';
@@ -66,11 +65,10 @@ export class NetClient {
     this._lastSend = 0;
     this._pendingJoin = null;
 
-    // Creative mode
+    // Race mode (+ shared world application)
     this.mode = null;
     this.color = 0;
     this.skin = 'stork';   // selected bird avatar id (see flight/AvatarBird.js BIRDS)
-    this.lobby = null;
     this.course = null;
     this.worldApplied = false;
 
@@ -148,17 +146,10 @@ export class NetClient {
     this.mode = mode || this.mode;
     if (typeof color === 'number') this.color = color % 8;
     if (typeof skin === 'string' && skin) this.skin = skin;
-    if (this.mode === 'creative' && !this.lobby) this._initCreative();
+    if (this.mode === 'race' && !this.course) this.course = new RingCourse(this.scene);
     if (this.mode === 'survival' && !this._survInit && this.connected) this._initSurvival();
     if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color, skin: this.skin }; return; }
     this.conn.reducers.joinRoom({ code, name, mode, color: this.color, skin: this.skin });
-  }
-
-  _initCreative() {
-    this.lobby = new LobbyUI();
-    this.lobby.onSubmitPrompt = (text) => { if (this.connected) this.conn.reducers.submitPrompt({ text }); };
-    this.lobby.onForge = () => this.startBuild();
-    this.course = new RingCourse(this.scene);
   }
 
   /**
@@ -265,8 +256,8 @@ export class NetClient {
     }
     this.remote.reconcile(remoteRows, dt, camera);
 
-    // 3) Creative mode: lobby UI + co-authored world application.
-    if (this.mode === 'creative' && this.lobby) this._driveCreative(room, roster);
+    // 3) Race mode: apply the synced world + course, report finishes (no predator).
+    if (this.mode === 'race') this._driveRace(room, roster, dt, camera);
     // 3b) Survival mode: predator render, course, sabotage FX, elimination.
     if (this.mode === 'survival') this._driveSurvival(room, roster, dt, camera);
 
@@ -296,42 +287,43 @@ export class NetClient {
     }
   }
 
-  _driveCreative(room, roster) {
+  /**
+   * Race-mode driver: applies the synced world (palette + RingCourse) once the
+   * match is 'playing', then advances the course and reports finishes. No
+   * predator, no prompt/lobby UI — the MenuShell handles the waiting room.
+   */
+  _driveRace(room, roster, dt, camera) {
+    if (!this.course) this.course = new RingCourse(this.scene);
     const state = room ? room.state : null;
-    const isHost = !!(room && room.host.toHexString() === this.identityHex);
 
-    if (state === 'lobby' || state === 'building') {
-      this.lobby.show();
-      this.lobby.setState({ roomCode: room.code, mode: room.mode, state, isHost, roster });
+    if (state !== 'playing') {
+      // Not racing yet → wait for the world; reset per-match application.
       this.worldApplied = false;
       return;
     }
 
-    if (state === 'playing') {
-      this.lobby.hide();
-      if (!this.worldApplied) {
-        const cfgRow = this._worldConfig(room.id);
-        if (cfgRow && cfgRow.status === 'ready' && cfgRow.json) {
-          try {
-            const cfg = JSON.parse(cfgRow.json);
-            applyPalette(this.scene, cfg);
-            this.course.build(cfg);
-            this.worldApplied = true;
-            console.log(`[net] world applied: theme=${cfg.theme}, ${cfg.rings?.length} rings`);
-          } catch (e) { console.warn('[net] bad world_config json', e); }
-        }
+    // Apply the synced world ONCE (palette + course).
+    if (!this.worldApplied) {
+      const cfgRow = this._worldConfig(room.id);
+      if (cfgRow && cfgRow.status === 'ready' && cfgRow.json) {
+        try {
+          const cfg = JSON.parse(cfgRow.json);
+          applyPalette(this.scene, cfg);
+          this.course.build(cfg);
+          this.worldApplied = true;
+          console.log(`[net] race world applied: theme=${cfg.theme}, ${cfg.rings?.length} rings`);
+        } catch (e) { console.warn('[net] bad world_config json', e); }
       }
-      if (this.worldApplied && this.course) {
-        const res = this.course.update(this.localState.position);
-        if (res.justFinished) {
-          this.reportFinish();
-          console.log('[net] course complete → reportFinish');
-        }
-      }
-      return;
     }
 
-    this.lobby.hide();
+    // Course progress → reportFinish on completion (once).
+    if (this.worldApplied && this.course) {
+      const res = this.course.update(this.localState.position);
+      if (res.justFinished) {
+        this.reportFinish();
+        console.log('[net] race course complete → reportFinish');
+      }
+    }
   }
 
   /** The predator row for a given room id (or null). */
@@ -520,9 +512,9 @@ export class NetClient {
   }
 
   /**
-   * Survival-mode driver: mirrors _driveCreative's world application, then adds
+   * Survival-mode driver: mirrors _driveRace's world application, then adds
    * the predator hawk, sabotage FX, proximity elimination, and HUNTED vignette.
-   * Creative mode is never touched by this path.
+   * Race mode is never touched by this path.
    */
   _driveSurvival(room, roster, dt, camera) {
     // Lazy init (in case the survival join happened before connect).
@@ -545,7 +537,7 @@ export class NetClient {
       return;
     }
 
-    // Apply the synced world ONCE (palette + course) exactly like _driveCreative.
+    // Apply the synced world ONCE (palette + course) exactly like _driveRace.
     if (!this._survWorldApplied) {
       const cfgRow = this._worldConfig(room.id);
       if (cfgRow && cfgRow.status === 'ready' && cfgRow.json) {
