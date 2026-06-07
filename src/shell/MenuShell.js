@@ -1324,7 +1324,7 @@ export class MenuShell {
     this._pendingStart = false;
     this._syncStartBtn();
     if (this.el.waitHint) {
-      this._text(this.el.waitHint, host
+      this._text(this.el.waitHint, isHost
         ? 'You are the host. Launch when the flock is ready.'
         : 'Waiting for the host to start the match…');
     }
