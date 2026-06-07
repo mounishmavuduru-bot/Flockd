@@ -110,7 +110,7 @@ export class NetClient {
         conn.subscriptionBuilder()
           .onApplied(() => { /* initial rows loaded */ })
           .subscribe([
-            'SELECT * FROM player', 'SELECT * FROM room',
+            'SELECT * FROM player', 'SELECT * FROM room', 'SELECT * FROM world_config',
             'SELECT * FROM predator', 'SELECT * FROM sabotage_event', 'SELECT * FROM director_log',
             'SELECT * FROM favor_ledger', 'SELECT * FROM commentary',
           ]);
