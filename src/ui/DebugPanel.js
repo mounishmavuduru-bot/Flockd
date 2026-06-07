@@ -1,7 +1,7 @@
 import GUI from 'lil-gui';
 
 export function createDebugPanel(options = {}) {
-  const gui = new GUI({ title: 'VogelSimulator Debug' });
+  const gui = new GUI({ title: 'FLOCKD Debug' });
 
   const params = {
     wireframe: false,

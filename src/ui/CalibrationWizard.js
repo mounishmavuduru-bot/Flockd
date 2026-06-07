@@ -453,7 +453,7 @@ export class CalibrationWizard {
     // Add a tap-to-skip button so users on devices where devicemotion
     // never fires (iOS without DeviceMotionEvent permission, simulators,
     // desktop browsers that forwarded mobile UA) aren't stuck forever
-    // at "Flugelschlag!". 8s hard timeout as extra safety net.
+    // at "Flap Wings!". 8s hard timeout as extra safety net.
     const skipBtn = document.createElement('button');
     skipBtn.textContent = t('calib.skipShake') || 'Skip';
     skipBtn.style.cssText = `

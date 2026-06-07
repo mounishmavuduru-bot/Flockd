@@ -32,8 +32,23 @@ export class ArmAnalyzer {
     this.gesture = 'GLIDE';
     this._diveActive = false;
 
-    // Dive hysteresis
+    // --- Vertical state machine: distinguishes GLIDE (hands above/neutral)
+    //     from DIVE (hands below) with a deadband + temporal smoothing so a
+    //     borderline arm position can't flip-flop between the two. ---
+    // Separated thresholds on avgElev (positive = hands above shoulders):
+    //   avgElev >= ABOVE_ENTER  → hands are clearly ABOVE  (glide / climb)
+    //   avgElev <= BELOW_ENTER  → hands are clearly BELOW   (dive)
+    //   between the two EXIT bands → "neutral", state is held.
+    this.DIVE_ENTER = -0.06;   // must reach this (hands well below) to start diving
+    this.DIVE_EXIT = -0.02;    // must rise above this to stop diving (deadband)
+    this.ABOVE_ENTER = 0.04;   // hands clearly above shoulders
+    this._verticalState = 'NEUTRAL'; // 'ABOVE' | 'NEUTRAL' | 'BELOW'
+
+    // Dive hysteresis (consecutive-frame confirmation)
     this._diveCounter = 0;
+    this._aboveCounter = 0;
+    this.DIVE_ON_FRAMES = 6;   // N consistent frames below before DIVE engages
+    this.DIVE_OFF_FRAMES = 2;  // frames at/above exit band before DIVE releases
 
     // Missing frames
     this._missingFrames = 0;
@@ -72,6 +87,8 @@ export class ArmAnalyzer {
         this.wingSpread += (1.0 - this.wingSpread) * 0.1;
         this._diveActive = false;
         this._diveCounter = 0;
+        this._aboveCounter = 0;
+        this._verticalState = 'NEUTRAL';
         this.gesture = 'NO TRACKING';
       }
       return this._output();
@@ -90,6 +107,8 @@ export class ArmAnalyzer {
       this.wingSpread += (1.0 - this.wingSpread) * 0.1;
       this._diveActive = false;
       this._diveCounter = 0;
+      this._aboveCounter = 0;
+      this._verticalState = 'NEUTRAL';
       this.gesture = 'GLIDE';
       return this._output();
     }
@@ -155,14 +174,45 @@ export class ArmAnalyzer {
 
     const isFlapping = this.flapStrength > 0.1;
 
-    // === DIVE: both hands below shoulders (sustained) ===
-    if (bothBelow && !isFlapping) {
-      this._diveCounter = Math.min(this._diveCounter + 1, 20);
-    } else {
-      this._diveCounter = Math.max(this._diveCounter - 2, 0);
+    // === VERTICAL STATE MACHINE: GLIDE (above/neutral) vs DIVE (below) ===
+    // Use the continuous avgElev signal with a deadband between the BELOW and
+    // ABOVE bands so a hand hovering near shoulder height stays in whatever
+    // state it last latched into instead of oscillating GLIDE↔DIVE.
+    // bothBelow / bothAbove are kept as a sign sanity check.
+    const clearlyBelow = bothBelow && avgElev <= this.DIVE_ENTER;
+    const clearlyAbove = bothAbove && avgElev >= this.ABOVE_ENTER;
+
+    if (clearlyBelow) {
+      this._verticalState = 'BELOW';
+    } else if (clearlyAbove) {
+      this._verticalState = 'ABOVE';
+    } else if (avgElev > this.DIVE_EXIT && avgElev < this.ABOVE_ENTER) {
+      // Hands risen clear of the dive exit band (and not yet clearly above):
+      // relax to NEUTRAL. This is the only way to leave a latched BELOW.
+      this._verticalState = 'NEUTRAL';
     }
-    if (this._diveCounter >= 8) this._diveActive = true;
-    if (this._diveCounter < 3) this._diveActive = false;
+    // In the BELOW exit band (DIVE_ENTER < avgElev <= DIVE_EXIT) the previous
+    // state is held — that gap is the positional hysteresis deadband, so hands
+    // hovering near shoulder height don't oscillate between GLIDE and DIVE.
+
+    // === DIVE: consecutive-frame confirmation on the BELOW state ===
+    const wantDive = this._verticalState === 'BELOW' && !isFlapping;
+    if (wantDive) {
+      this._diveCounter = Math.min(this._diveCounter + 1, 20);
+      this._aboveCounter = 0;
+    } else {
+      this._diveCounter = Math.max(this._diveCounter - 1, 0);
+      if (this._verticalState === 'ABOVE') {
+        this._aboveCounter = Math.min(this._aboveCounter + 1, 20);
+      } else {
+        this._aboveCounter = 0;
+      }
+    }
+    // Engage only after DIVE_ON_FRAMES consistent frames; release only after
+    // the counter decays past DIVE_OFF_FRAMES. Separate enter/exit bands give
+    // temporal hysteresis on top of the positional deadband above.
+    if (this._diveCounter >= this.DIVE_ON_FRAMES) this._diveActive = true;
+    if (this._diveCounter <= this.DIVE_OFF_FRAMES) this._diveActive = false;
 
     // === ROLL: elevation difference ===
     const elevDiff = rightElev - leftElev;
@@ -190,11 +240,14 @@ export class ArmAnalyzer {
     this.wingSpread += (targetSpread - this.wingSpread) * 0.05;
 
     // === GESTURE LABEL (with 300ms hold) ===
+    // DIVE is driven ONLY by the hysteretic _diveActive state (single source of
+    // truth) — the old raw `pitch < -0.15` trigger had no hysteresis and caused
+    // GLIDE↔DIVE flicker, so it is removed. CLIMB requires hands to be in the
+    // confirmed ABOVE state, so neutral pitch noise can't read as CLIMB.
     let newGesture;
     if (this._diveActive) newGesture = 'DIVE';
     else if (isFlapping) newGesture = 'FLAP!';
-    else if (this.pitch > 0.15) newGesture = 'CLIMB';
-    else if (this.pitch < -0.15) newGesture = 'DIVE';
+    else if (this._verticalState === 'ABOVE' && this.pitch > 0.15) newGesture = 'CLIMB';
     else if (Math.abs(this.roll) > 0.12) newGesture = this.roll > 0 ? 'TURN LEFT' : 'TURN RIGHT';
     else newGesture = 'GLIDE';
 

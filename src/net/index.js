@@ -46,11 +46,12 @@ export class NetClient {
    * @param {string} [opts.uri]
    * @param {string} [opts.dbName]
    */
-  constructor({ scene, localState, onState, onError, flightPhysics, uri, dbName } = {}) {
+  constructor({ scene, localState, onState, onError, onReady, flightPhysics, uri, dbName } = {}) {
     this.scene = scene;
     this.localState = localState;
     this.onState = onState;
     this.onError = onError || null;
+    this.onReady = onReady || null;   // fired the instant the socket connects
     this.flightPhysics = flightPhysics || null;
     this.uri = uri || defaultUri();
     this.dbName = dbName || DB_NAME;
@@ -118,12 +119,16 @@ export class NetClient {
           this.join(this._pendingJoin);
           this._pendingJoin = null;
         }
+        // Notify UI immediately (don't wait for the first post-connect update()
+        // frame to flip the status chip / fire a queued host Start).
+        if (this.onReady) this.onReady(true);
         console.log('[net] connected as', this.identityHex.slice(0, 8));
       },
       onDisconnect: () => {
         this.connected = false;
         this.myRoomId = 0n;
         this.remote.clear();
+        if (this.onReady) this.onReady(false);
         console.warn('[net] disconnected');
         if (this.onError) this.onError('disconnected');
       },

@@ -306,6 +306,7 @@ const CSS = `
 .flk2-btn-sec:hover{background:rgba(28,36,66,.7);border-color:rgba(150,170,255,.4)}
 .flk2-btn:disabled{opacity:.45;cursor:not-allowed;filter:none;box-shadow:none;transform:none}
 .flk2-btn:disabled:hover{filter:none}
+.flk2-btn.flk2-pending{opacity:.7;cursor:progress;animation:flk2-glowpulse 1.1s var(--flk2-ease) infinite}
 
 /* ---------- code chip (create) ---------- */
 .flk2-codebox{display:none;align-items:center;justify-content:space-between;gap:12px;
@@ -465,6 +466,10 @@ export class MenuShell {
     this._mounted = false;
     this._onStart = null;
     this._onAgain = null;
+    this._connected = false;      // last-known net connection state
+    this._isHost = false;         // am I the host of the current waiting room?
+    this._pendingStart = false;   // host pressed Start before connect → fire on connect
+    this._rosterSig = null;       // signature of the roster currently rendered (diffing)
     this.el = {};                 // element refs
   }
 
@@ -536,6 +541,10 @@ export class MenuShell {
       '<div class="flk2-grain"></div>' +
       '<div class="flk2-vignette"></div>';
     while (chrome.firstChild) root.appendChild(chrome.firstChild);
+
+    // Collect status chips fresh on each (re)build so setConnected() can sync all of them.
+    this._statusDots = [];
+    this._statusLabels = [];
 
     this._buildAuth();
     this._buildHome();
@@ -678,12 +687,18 @@ export class MenuShell {
       const dot = document.createElement('span');
       dot.className = 'flk2-statusdot';
       const label = document.createElement('span');
-      label.textContent = 'connecting';
+      label.textContent = this._connected ? 'connected' : 'connecting';
+      if (this._connected) dot.classList.add('flk2-live');
       status.appendChild(dot);
       status.appendChild(label);
       top.appendChild(status);
+      // _topBar is built once per screen (connecting/waiting/results), so collect
+      // EVERY status chip and update them all — otherwise setConnected() only
+      // touches the last-built one and the visible chip stays stuck.
       this.el.statusDot = dot;
       this.el.statusLabel = label;
+      (this._statusDots || (this._statusDots = [])).push(dot);
+      (this._statusLabels || (this._statusLabels = [])).push(label);
     }
     return top;
   }
@@ -1025,6 +1040,13 @@ export class MenuShell {
     this.el.waitHint = hint;
 
     startBtn.addEventListener('click', () => {
+      if (!this._isHost) return;
+      if (!this._connected) {
+        // Not connected yet: queue the Start and fire it on connect.
+        this._pendingStart = true;
+        this._syncStartBtn();
+        return;
+      }
       if (typeof this._onStart === 'function') this._onStart();
     });
 
@@ -1147,10 +1169,28 @@ export class MenuShell {
   }
 
   // ============================================================= roster rendering
+  // Stable signature of a roster so we only rebuild the DOM (and re-trigger the
+  // entrance animation) when the membership/order/host/color/you actually change.
+  _rosterSignature(list) {
+    if (!Array.isArray(list) || !list.length) return 'empty';
+    return list
+      .map((p) => [
+        (p && p.name) || 'bird',
+        typeof (p && p.color) === 'number' ? p.color : 0,
+        p && p.host ? 1 : 0,
+        p && p.me ? 1 : 0,
+      ].join(':'))
+      .join('|');
+  }
+
   _renderRoster(container, roster) {
     if (!container) return;
-    container.innerHTML = '';
     const list = Array.isArray(roster) ? roster : [];
+    // Diff: skip the full rebuild (and animation restart) when nothing changed.
+    const sig = this._rosterSignature(list);
+    if (container.__rosterSig === sig) return;
+    container.__rosterSig = sig;
+    container.innerHTML = '';
     if (!list.length) {
       const empty = document.createElement('div');
       empty.className = 'flk2-wait-hint';
@@ -1223,8 +1263,34 @@ export class MenuShell {
   }
 
   setConnected(isConnected) {
-    if (this.el.statusDot) this.el.statusDot.classList.toggle('flk2-live', !!isConnected);
-    if (this.el.statusLabel) this.el.statusLabel.textContent = isConnected ? 'connected' : 'connecting';
+    const next = !!isConnected;
+    const changed = next !== this._connected;
+    this._connected = next;
+    // Update EVERY status chip (one per screen top bar), not just the last-built.
+    const dots = this._statusDots || (this.el.statusDot ? [this.el.statusDot] : []);
+    const labels = this._statusLabels || (this.el.statusLabel ? [this.el.statusLabel] : []);
+    for (const d of dots) d.classList.toggle('flk2-live', next);
+    for (const l of labels) l.textContent = next ? 'connected' : 'connecting';
+    // Keep the waiting-room START button in sync with the live connection state.
+    this._syncStartBtn();
+    // If the host pressed Start before we were connected, fire it now.
+    if (next && changed && this._pendingStart) {
+      this._pendingStart = false;
+      if (typeof this._onStart === 'function') this._onStart();
+    }
+  }
+
+  // Reflect host + connection state onto the waiting-room START button.
+  _syncStartBtn() {
+    const btn = this.el.waitStart;
+    if (!btn) return;
+    if (!this._isHost) { btn.style.display = 'none'; btn.disabled = true; return; }
+    btn.style.display = 'inline-flex';
+    const ready = this._connected;
+    const wantPending = this._pendingStart && !ready;
+    btn.disabled = !ready;
+    btn.classList.toggle('flk2-pending', wantPending || !ready);
+    this._setBtn(btn, wantPending ? 'Starting…' : (ready ? 'Start match' : 'Connecting…'), ICON.arrow);
   }
 
   showWaitingRoom({ code, mode, isHost, roster, onStart } = {}) {
@@ -1248,13 +1314,15 @@ export class MenuShell {
       this.el.waitCopy.onclick = () => this._copy(safeCode, this.el.waitCopy);
     }
 
+    // Fresh waiting room → force a roster rebuild even if the signature matches
+    // a stale value left over from a previous match.
+    if (this.el.waitRoster) this.el.waitRoster.__rosterSig = null;
     this._renderRoster(this.el.waitRoster, roster);
 
-    const host = !!isHost;
-    if (this.el.waitStart) {
-      this.el.waitStart.style.display = host ? 'inline-flex' : 'none';
-      this.el.waitStart.disabled = !host;
-    }
+    this._isHost = !!isHost;
+    // A fresh waiting room starts with no queued Start.
+    this._pendingStart = false;
+    this._syncStartBtn();
     if (this.el.waitHint) {
       this._text(this.el.waitHint, host
         ? 'You are the host. Launch when the flock is ready.'

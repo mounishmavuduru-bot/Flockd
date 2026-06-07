@@ -95,7 +95,7 @@ export class MobileUI {
       <h1 style="font-size:28px; font-weight:bold; margin-bottom:8px;
         background:linear-gradient(to right,#60c0ff,#40a0ff,#ffaa44);
         -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-        VogelSimulator
+        FLOCKD
       </h1>
       <p id="mobile-start-subtitle" style="color:#88aacc; margin-bottom:24px; font-size:14px; max-width:300px; line-height:1.5;">
         ${t('start.subtitle').replace('\n', '<br>')}

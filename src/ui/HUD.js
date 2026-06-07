@@ -21,30 +21,6 @@ export class HUD {
     `;
     document.body.appendChild(this.el);
 
-    // Flap indicator
-    this.flapIndicator = document.createElement('div');
-    this.flapIndicator.id = 'flap-indicator';
-    this.flapIndicator.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 60px;
-      height: 60px;
-      border: 2px solid rgba(255,255,255,0.5);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-size: 24px;
-      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-      pointer-events: none;
-      z-index: 100;
-      transition: background 0.2s;
-    `;
-    this.flapIndicator.textContent = '~';
-    document.body.appendChild(this.flapIndicator);
-
     // Controls hint
     this.hint = document.createElement('div');
     this.hint.style.cssText = `
@@ -97,14 +73,5 @@ export class HUD {
       HDG: ${heading}&deg;<br>
       AoA: ${aoa}&deg;
     `;
-
-    // Flap indicator flash
-    if (isFlapping) {
-      this.flapIndicator.style.background = 'rgba(255, 200, 50, 0.5)';
-      this.flapIndicator.textContent = '^';
-    } else {
-      this.flapIndicator.style.background = 'transparent';
-      this.flapIndicator.textContent = '~';
-    }
   }
 }

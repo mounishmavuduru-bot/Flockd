@@ -409,7 +409,13 @@ if (roomCode) {
   const savedName = (() => { try { return localStorage.getItem('flockd.name'); } catch { return null; } })();
   const savedColor = (() => { try { return parseInt(localStorage.getItem('flockd.color'), 10) || 0; } catch { return 0; } })();
 
-  net = new NetClient({ scene, localState: flightState, flightPhysics, onState: handleNetState, onError: handleNetError });
+  net = new NetClient({
+    scene, localState: flightState, flightPhysics,
+    onState: handleNetState, onError: handleNetError,
+    // Flip the status chip / fire a queued host Start the instant we connect,
+    // without waiting for the first room-state frame from update().
+    onReady: (ok) => { if (shell) shell.setConnected(!!ok); },
+  });
   shell = new MenuShell({
     palette: FLOCK_PALETTE,
     name: savedName,
@@ -514,7 +520,6 @@ window.__startAutopilot = (seq) => {
     flightMode = true;
     controls.enabled = false;
     hud.el.style.display = 'block';
-    hud.flapIndicator.style.display = 'flex';
   }
   autopilot.start(seq || DEMO_SEQUENCE);
 };
@@ -574,7 +579,6 @@ window.addEventListener('keydown', (e) => {
     flightMode = !flightMode;
     controls.enabled = !flightMode;
     hud.el.style.display = flightMode ? 'block' : 'none';
-    hud.flapIndicator.style.display = flightMode ? 'flex' : 'none';
 
     if (flightMode && webcamOverlay) {
       webcamOverlay.show();
