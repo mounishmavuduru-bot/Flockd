@@ -10,6 +10,19 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const DirectorLog = __t.object("DirectorLog", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  tick: __t.u64(),
+  targetName: __t.string(),
+  behavior: __t.string(),
+  sabotageKind: __t.string(),
+  reasoning: __t.string(),
+  taunt: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type DirectorLog = __Infer<typeof DirectorLog>;
+
 export const LobbyPrompt = __t.object("LobbyPrompt", {
   id: __t.u64(),
   roomId: __t.u64(),
@@ -39,6 +52,20 @@ export const Player = __t.object("Player", {
 });
 export type Player = __Infer<typeof Player>;
 
+export const Predator = __t.object("Predator", {
+  roomId: __t.u64(),
+  x: __t.f32(),
+  y: __t.f32(),
+  z: __t.f32(),
+  yaw: __t.f32(),
+  targetPlayer: __t.identity(),
+  behavior: __t.string(),
+  speed: __t.f32(),
+  active: __t.bool(),
+  updatedAt: __t.timestamp(),
+});
+export type Predator = __Infer<typeof Predator>;
+
 export const Room = __t.object("Room", {
   id: __t.u64(),
   code: __t.string(),
@@ -51,6 +78,18 @@ export const Room = __t.object("Room", {
   createdAt: __t.timestamp(),
 });
 export type Room = __Infer<typeof Room>;
+
+export const SabotageEvent = __t.object("SabotageEvent", {
+  id: __t.u64(),
+  roomId: __t.u64(),
+  target: __t.identity(),
+  kind: __t.string(),
+  magnitude: __t.f32(),
+  durationMs: __t.u32(),
+  reason: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type SabotageEvent = __Infer<typeof SabotageEvent>;
 
 export const TickTimer = __t.object("TickTimer", {
   scheduledId: __t.u64(),

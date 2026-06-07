@@ -15,7 +15,7 @@
  * Phase 3 adds: predator, sabotage_event + survival reducers.
  */
 import { schema, table, t } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Identity } from 'spacetimedb';
 
 // ───────────────────────────── Tables ─────────────────────────────
 
@@ -93,7 +93,64 @@ const worldConfig = table(
   }
 );
 
-const spacetimedb = schema({ room, player, tickTimer, lobbyPrompt, worldConfig });
+/** Survival mode: one predator hawk per room — written by the AI sidecar. */
+const predator = table(
+  { name: 'predator', public: true },
+  {
+    roomId: t.u64().primaryKey(), // one predator per room (group = phase 2)
+    x: t.f32(),
+    y: t.f32(),
+    z: t.f32(),
+    yaw: t.f32(),
+    targetPlayer: t.identity(), // who it's hunting (zero-ish = none)
+    behavior: t.string(), // 'chase' | 'intercept' | 'patrol' | 'ambush'
+    speed: t.f32(),
+    active: t.bool(),
+    updatedAt: t.timestamp(),
+  }
+);
+
+/** Survival mode: sabotage debuffs the sidecar fires at players. EVENT table — clients apply on onInsert. */
+const sabotageEvent = table(
+  { name: 'sabotage_event', public: true, event: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64().index('btree'),
+    target: t.identity(), // who gets debuffed
+    kind: t.string(), // 'wingclip' | 'fog' | 'headwind' | 'scatter'
+    magnitude: t.f32(), // 0..1 strength
+    durationMs: t.u32(),
+    reason: t.string(), // Claude's short justification (shown in HUD + dashboard)
+    createdAt: t.timestamp(),
+  }
+);
+
+/** Survival mode: the director's decision log — dashboard loads history + live. */
+const directorLog = table(
+  { name: 'director_log', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    roomId: t.u64().index('btree'),
+    tick: t.u64(),
+    targetName: t.string(), // display name of the hunted bird
+    behavior: t.string(),
+    sabotageKind: t.string(), // '' if none this tick
+    reasoning: t.string(), // Claude's distilled thinking ("why")
+    taunt: t.string(), // in-character line ("the gold one flies too clean…")
+    createdAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({
+  room,
+  player,
+  tickTimer,
+  lobbyPrompt,
+  worldConfig,
+  predator,
+  sabotageEvent,
+  directorLog,
+});
 export default spacetimedb;
 
 // ──────────────────────────── Constants ───────────────────────────
@@ -153,6 +210,16 @@ function upsertWorldConfig(ctx: any, roomId: bigint, json: string, status: strin
     ctx.db.worldConfig.roomId.update({ ...existing, json, status, updatedAt: ctx.timestamp });
   } else {
     ctx.db.worldConfig.insert({ roomId, json, status, updatedAt: ctx.timestamp });
+  }
+}
+
+/** Insert or update the single predator row for a room. */
+function upsertPredator(ctx: any, roomId: bigint, fields: any) {
+  const existing = ctx.db.predator.roomId.find(roomId);
+  if (existing) {
+    ctx.db.predator.roomId.update({ ...existing, ...fields, updatedAt: ctx.timestamp });
+  } else {
+    ctx.db.predator.insert({ roomId, ...fields, updatedAt: ctx.timestamp });
   }
 }
 
@@ -371,6 +438,98 @@ export const setWorldConfig = spacetimedb.reducer(
     beginPlaying(ctx, r);
   }
 );
+
+// ───────────────────────── Survival mode ──────────────────────────
+// Reducers below are authored by the AI sidecar (a privileged ordinary client).
+// TODO authz: gate these to the sidecar's identity once we have one.
+
+/** Sidecar spawns the predator for a survival room → 'playing'. Upsert, centered, no target. */
+export const spawnPredator = spacetimedb.reducer({ roomId: t.u64() }, (ctx, { roomId }) => {
+  upsertPredator(ctx, roomId, {
+    x: SPAWN.x,
+    y: SPAWN.y,
+    z: SPAWN.z,
+    yaw: 0,
+    targetPlayer: Identity.zero(),
+    behavior: 'patrol',
+    speed: 50,
+    active: true,
+  });
+});
+
+/** Sidecar steering tick — write the predator transform + current target/behavior. */
+export const movePredator = spacetimedb.reducer(
+  {
+    roomId: t.u64(),
+    x: t.f32(),
+    y: t.f32(),
+    z: t.f32(),
+    yaw: t.f32(),
+    targetPlayer: t.identity(),
+    behavior: t.string(),
+    speed: t.f32(),
+  },
+  (ctx, { roomId, x, y, z, yaw, targetPlayer, behavior, speed }) => {
+    upsertPredator(ctx, roomId, { x, y, z, yaw, targetPlayer, behavior, speed, active: true });
+  }
+);
+
+/** Sidecar fires a sabotage at a player — inserts a sabotage_event (clients apply on onInsert). */
+export const emitSabotage = spacetimedb.reducer(
+  {
+    roomId: t.u64(),
+    target: t.identity(),
+    kind: t.string(),
+    magnitude: t.f32(),
+    durationMs: t.u32(),
+    reason: t.string(),
+  },
+  (ctx, { roomId, target, kind, magnitude, durationMs, reason }) => {
+    ctx.db.sabotageEvent.insert({
+      id: 0n,
+      roomId,
+      target,
+      kind,
+      magnitude,
+      durationMs,
+      reason,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+/** Sidecar logs the director's decision for the dashboard. */
+export const logDirector = spacetimedb.reducer(
+  {
+    roomId: t.u64(),
+    tick: t.u64(),
+    targetName: t.string(),
+    behavior: t.string(),
+    sabotageKind: t.string(),
+    reasoning: t.string(),
+    taunt: t.string(),
+  },
+  (ctx, { roomId, tick, targetName, behavior, sabotageKind, reasoning, taunt }) => {
+    ctx.db.directorLog.insert({
+      id: 0n,
+      roomId,
+      tick,
+      targetName,
+      behavior,
+      sabotageKind,
+      reasoning,
+      taunt,
+      createdAt: ctx.timestamp,
+    });
+  }
+);
+
+/** Sidecar despawns the predator on room → 'over'/empty. Marks inactive (keeps the row). */
+export const despawnPredator = spacetimedb.reducer({ roomId: t.u64() }, (ctx, { roomId }) => {
+  const existing = ctx.db.predator.roomId.find(roomId);
+  if (!existing) return;
+  ctx.db.predator.roomId.update({ ...existing, active: false, updatedAt: ctx.timestamp });
+});
 
 // ──────────────────────────── Scheduled ───────────────────────────
 

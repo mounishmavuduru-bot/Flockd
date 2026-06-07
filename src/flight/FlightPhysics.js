@@ -21,6 +21,59 @@ export class FlightPhysics {
    */
   constructor(state) {
     this.state = state;
+
+    // --- DEBUFF system (survival predator sabotages) ---
+    // Default: empty → zero effect, so single-player / creative flight is
+    // byte-for-byte identical to before. Each entry: { magnitude, expiry }
+    // keyed by kind. 'fog' is intentionally ignored here (client-visual only).
+    this._debuffs = Object.create(null);
+  }
+
+  /**
+   * Apply a timed flight debuff (called by the survival sabotage client).
+   * Re-applying a kind refreshes its magnitude + expiry.
+   * @param {('wingclip'|'headwind'|'scatter')} kind
+   * @param {number} magnitude - 0..1 strength
+   * @param {number} durationMs - lifetime in milliseconds
+   */
+  applyDebuff(kind, magnitude, durationMs) {
+    if (kind === 'fog') return; // client-visual only, no physics effect
+    if (kind !== 'wingclip' && kind !== 'headwind' && kind !== 'scatter') return;
+    const mag = clamp(Number(magnitude) || 0, 0, 1);
+    const dur = Math.max(0, Number(durationMs) || 0);
+    if (mag <= 0 || dur <= 0) return;
+    this._debuffs[kind] = { magnitude: mag, expiry: performance.now() + dur };
+  }
+
+  /**
+   * @param {('wingclip'|'headwind'|'scatter')} kind
+   * @returns {number} active magnitude (0 if none / expired)
+   */
+  _debuffMag(kind) {
+    const d = this._debuffs[kind];
+    if (!d) return 0;
+    if (performance.now() >= d.expiry) {
+      delete this._debuffs[kind];
+      return 0;
+    }
+    return d.magnitude;
+  }
+
+  /**
+   * Active debuff kinds (for HUD), pruning expired ones.
+   * @returns {string[]}
+   */
+  activeDebuffs() {
+    const now = performance.now();
+    const out = [];
+    for (const kind in this._debuffs) {
+      if (now >= this._debuffs[kind].expiry) {
+        delete this._debuffs[kind];
+      } else {
+        out.push(kind);
+      }
+    }
+    return out;
   }
 
   /**
@@ -124,6 +177,16 @@ export class FlightPhysics {
 
     s.updateVectors();
 
+    // --- DEBUFFS (survival sabotages; no-op when none active) ---
+    // scatter: small random roll & pitch jitter, proportional to magnitude.
+    const scatterMag = this._debuffMag('scatter');
+    if (scatterMag > 0) {
+      s.roll += (Math.random() - 0.5) * 1.2 * scatterMag * dt;
+      s.pitch += (Math.random() - 0.5) * 1.2 * scatterMag * dt;
+      s.pitch = clamp(s.pitch, -MAX_PITCH - 0.1, MAX_PITCH + 0.1);
+      s.updateVectors(); // refresh vectors after jitter
+    }
+
     const speed = s.velocity.length();
     const dynamicPressure = 0.5 * AIR_DENSITY * speed * speed;
 
@@ -139,7 +202,9 @@ export class FlightPhysics {
     // Only a small residual CL bonus during flap to avoid unintended climb at level flight
     if (s.flapPhase > 0) {
       const pitchFactor = clamp((s.pitch / MAX_PITCH) + 0.3, 0, 1);
-      CL += FLAP_LIFT_BONUS * pitchFactor; // full bonus only when pitched up
+      // wingclip debuff weakens the flap's lift bonus (1 at full strength).
+      const wingclip = 1 - this._debuffMag('wingclip');
+      CL += FLAP_LIFT_BONUS * pitchFactor * wingclip; // full bonus only when pitched up
     }
     s.liftCoefficient = CL;
     s.isStalling = false;
@@ -231,10 +296,21 @@ export class FlightPhysics {
     // --- 6. Gravity ---
     s.velocity.y += GRAVITY * dt;
 
+    // --- 6b. Headwind debuff: steady deceleration opposing forward motion ---
+    // Slows progress; magnitude 0..1 scales a constant backward accel.
+    const headwindMag = this._debuffMag('headwind');
+    if (headwindMag > 0 && speed > 0.1) {
+      const HEADWIND_ACCEL = 12.0; // m/s² at full magnitude
+      const oppose = s.velocity.clone().normalize().multiplyScalar(-HEADWIND_ACCEL * headwindMag * dt);
+      s.velocity.add(oppose);
+    }
+
     // --- 7. Flap thrust (timed downstroke) — pitch-dependent direction ---
     // Level flight: mostly forward (80/20). Climbing: even split. Diving: almost all forward.
     if (s.flapPhase > 0) {
-      const thrustAccel = FLAP_THRUST * (s.flapStrengthScale || 1) / BIRD_MASS;
+      // wingclip debuff weakens flap thrust / climb power while active.
+      const wingclip = 1 - this._debuffMag('wingclip');
+      const thrustAccel = FLAP_THRUST * (s.flapStrengthScale || 1) * wingclip / BIRD_MASS;
       // pitchFactor: 0.1 at full dive, 0.5 at level, 1.0 at full climb
       const pitchFactor = clamp((s.pitch / MAX_PITCH) * 0.5 + 0.5, 0.1, 1.0);
       const upComponent = pitchFactor * 0.5;           // 0.05..0.5

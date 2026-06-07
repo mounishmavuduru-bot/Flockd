@@ -6,25 +6,35 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import DespawnPredatorReducer from "../despawn_predator_reducer";
+import EmitSabotageReducer from "../emit_sabotage_reducer";
 import JoinRoomReducer from "../join_room_reducer";
 import LeaveRoomReducer from "../leave_room_reducer";
+import LogDirectorReducer from "../log_director_reducer";
+import MovePredatorReducer from "../move_predator_reducer";
 import ReportDeathReducer from "../report_death_reducer";
 import ReportFinishReducer from "../report_finish_reducer";
 import SetColorReducer from "../set_color_reducer";
 import SetNameReducer from "../set_name_reducer";
 import SetWorldConfigReducer from "../set_world_config_reducer";
+import SpawnPredatorReducer from "../spawn_predator_reducer";
 import StartBuildReducer from "../start_build_reducer";
 import StartGameReducer from "../start_game_reducer";
 import SubmitPromptReducer from "../submit_prompt_reducer";
 import UpdateTransformReducer from "../update_transform_reducer";
 
+export type DespawnPredatorParams = __Infer<typeof DespawnPredatorReducer>;
+export type EmitSabotageParams = __Infer<typeof EmitSabotageReducer>;
 export type JoinRoomParams = __Infer<typeof JoinRoomReducer>;
 export type LeaveRoomParams = __Infer<typeof LeaveRoomReducer>;
+export type LogDirectorParams = __Infer<typeof LogDirectorReducer>;
+export type MovePredatorParams = __Infer<typeof MovePredatorReducer>;
 export type ReportDeathParams = __Infer<typeof ReportDeathReducer>;
 export type ReportFinishParams = __Infer<typeof ReportFinishReducer>;
 export type SetColorParams = __Infer<typeof SetColorReducer>;
 export type SetNameParams = __Infer<typeof SetNameReducer>;
 export type SetWorldConfigParams = __Infer<typeof SetWorldConfigReducer>;
+export type SpawnPredatorParams = __Infer<typeof SpawnPredatorReducer>;
 export type StartBuildParams = __Infer<typeof StartBuildReducer>;
 export type StartGameParams = __Infer<typeof StartGameReducer>;
 export type SubmitPromptParams = __Infer<typeof SubmitPromptReducer>;

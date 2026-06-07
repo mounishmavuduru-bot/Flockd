@@ -362,6 +362,7 @@ if (roomCode) {
   net = new NetClient({
     scene,
     localState: flightState,
+    flightPhysics,
     onState: (info) => { window.__netState = info; },
   });
   net.connect();
@@ -379,7 +380,7 @@ if (roomCode) {
   const savedName = (() => { try { return localStorage.getItem('flockd.name'); } catch { return null; } })();
   const savedColor = (() => { try { return parseInt(localStorage.getItem('flockd.color'), 10) || 0; } catch { return 0; } })();
 
-  net = new NetClient({ scene, localState: flightState, onState: handleNetState });
+  net = new NetClient({ scene, localState: flightState, flightPhysics, onState: handleNetState });
   shell = new MenuShell({
     palette: FLOCK_PALETTE,
     name: savedName,
@@ -417,7 +418,7 @@ if (roomCode) {
   // Dev shortcut: host start/forge (the shell + in-room lobby are the real controls).
   window.addEventListener('keydown', (e) => {
     if ((e.key === 'g' || e.key === 'G') && net.myRoomId !== 0n) {
-      if (net.mode === 'creative') net.startBuild(); else net.startGame();
+      net.startBuild(); // both modes generate a world; survival adds the predator on 'playing'
     }
   });
 
@@ -438,7 +439,7 @@ if (roomCode) {
       if (uiState !== 'waiting') {
         shell.showWaitingRoom({
           code: info.roomCode, mode: 'survival', isHost: info.isHost,
-          roster: info.roster || [], onStart: () => net.startGame(),
+          roster: info.roster || [], onStart: () => net.startBuild(),
         });
         uiState = 'waiting';
       } else {

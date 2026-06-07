@@ -34,13 +34,18 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import DespawnPredatorReducer from "./despawn_predator_reducer";
+import EmitSabotageReducer from "./emit_sabotage_reducer";
 import JoinRoomReducer from "./join_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
+import LogDirectorReducer from "./log_director_reducer";
+import MovePredatorReducer from "./move_predator_reducer";
 import ReportDeathReducer from "./report_death_reducer";
 import ReportFinishReducer from "./report_finish_reducer";
 import SetColorReducer from "./set_color_reducer";
 import SetNameReducer from "./set_name_reducer";
 import SetWorldConfigReducer from "./set_world_config_reducer";
+import SpawnPredatorReducer from "./spawn_predator_reducer";
 import StartBuildReducer from "./start_build_reducer";
 import StartGameReducer from "./start_game_reducer";
 import SubmitPromptReducer from "./submit_prompt_reducer";
@@ -49,15 +54,32 @@ import UpdateTransformReducer from "./update_transform_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import DirectorLogRow from "./director_log_table";
 import LobbyPromptRow from "./lobby_prompt_table";
 import PlayerRow from "./player_table";
+import PredatorRow from "./predator_table";
 import RoomRow from "./room_table";
+import SabotageEventRow from "./sabotage_event_table";
 import WorldConfigRow from "./world_config_table";
 
 /** Type-only namespace exports for generated type groups. */
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  directorLog: __table({
+    name: 'director_log',
+    indexes: [
+      { accessor: 'id', name: 'director_log_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'roomId', name: 'director_log_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'director_log_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, DirectorLogRow),
   lobbyPrompt: __table({
     name: 'lobby_prompt',
     indexes: [
@@ -86,6 +108,17 @@ const tablesSchema = __schema({
       { name: 'player_identity_key', constraint: 'unique', columns: ['identity'] },
     ],
   }, PlayerRow),
+  predator: __table({
+    name: 'predator',
+    indexes: [
+      { accessor: 'roomId', name: 'predator_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'predator_room_id_key', constraint: 'unique', columns: ['roomId'] },
+    ],
+  }, PredatorRow),
   room: __table({
     name: 'room',
     indexes: [
@@ -101,6 +134,21 @@ const tablesSchema = __schema({
       { name: 'room_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RoomRow),
+  sabotageEvent: __table({
+    name: 'sabotage_event',
+    indexes: [
+      { accessor: 'id', name: 'sabotage_event_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'roomId', name: 'sabotage_event_room_id_idx_btree', algorithm: 'btree', columns: [
+        'roomId',
+      ] },
+    ],
+    constraints: [
+      { name: 'sabotage_event_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+    event: true,
+  }, SabotageEventRow),
   worldConfig: __table({
     name: 'world_config',
     indexes: [
@@ -116,13 +164,18 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("despawn_predator", DespawnPredatorReducer),
+  __reducerSchema("emit_sabotage", EmitSabotageReducer),
   __reducerSchema("join_room", JoinRoomReducer),
   __reducerSchema("leave_room", LeaveRoomReducer),
+  __reducerSchema("log_director", LogDirectorReducer),
+  __reducerSchema("move_predator", MovePredatorReducer),
   __reducerSchema("report_death", ReportDeathReducer),
   __reducerSchema("report_finish", ReportFinishReducer),
   __reducerSchema("set_color", SetColorReducer),
   __reducerSchema("set_name", SetNameReducer),
   __reducerSchema("set_world_config", SetWorldConfigReducer),
+  __reducerSchema("spawn_predator", SpawnPredatorReducer),
   __reducerSchema("start_build", StartBuildReducer),
   __reducerSchema("start_game", StartGameReducer),
   __reducerSchema("submit_prompt", SubmitPromptReducer),

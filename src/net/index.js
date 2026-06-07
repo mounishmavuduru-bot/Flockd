@@ -17,10 +17,16 @@ import { connectToFlocked } from './connection.js';
 import { RemoteBirds } from './remoteBirds.js';
 import { LobbyUI } from './lobbyUI.js';
 import { RingCourse, applyPalette } from './applyWorld.js';
+import { Predator } from './predator.js';
+import { SabotageFX } from './sabotage.js';
 
 const DB_NAME = 'flocked';
 const SEND_HZ = 12;
 const SEND_INTERVAL_MS = 1000 / SEND_HZ;
+
+// Survival proximity-elimination tunables (mirror docs/SURVIVAL.md).
+const CATCH_RADIUS = 18;     // metres
+const CATCH_SECONDS = 2.2;   // continuous time inside catch-range → eliminated
 
 function defaultUri() {
   const h = location.hostname;
@@ -36,13 +42,15 @@ export class NetClient {
    * @param {THREE.Scene} opts.scene
    * @param {object} opts.localState   the local FlightState (read each frame)
    * @param {(info:object)=>void} [opts.onState]
+   * @param {object} [opts.flightPhysics]  local FlightPhysics (for survival debuffs)
    * @param {string} [opts.uri]
    * @param {string} [opts.dbName]
    */
-  constructor({ scene, localState, onState, uri, dbName } = {}) {
+  constructor({ scene, localState, onState, flightPhysics, uri, dbName } = {}) {
     this.scene = scene;
     this.localState = localState;
     this.onState = onState;
+    this.flightPhysics = flightPhysics || null;
     this.uri = uri || defaultUri();
     this.dbName = dbName || DB_NAME;
 
@@ -62,6 +70,16 @@ export class NetClient {
     this.lobby = null;
     this.course = null;
     this.worldApplied = false;
+
+    // Survival mode (lazy-initialized in _initSurvival)
+    this.predator = null;
+    this.sabotage = null;
+    this.survCourse = null;
+    this._survInit = false;
+    this._survWorldApplied = false;
+    this._huntTimer = 0;     // continuous seconds inside catch-range
+    this._deathReported = false;
+    this._vignette = null;
   }
 
   connect() {
@@ -74,7 +92,12 @@ export class NetClient {
         this.connected = true;
         conn.subscriptionBuilder()
           .onApplied(() => { /* initial rows loaded */ })
-          .subscribe(['SELECT * FROM player', 'SELECT * FROM room']);
+          .subscribe([
+            'SELECT * FROM player', 'SELECT * FROM room',
+            'SELECT * FROM predator', 'SELECT * FROM sabotage_event', 'SELECT * FROM director_log',
+          ]);
+        // A survival join may have been queued before connect; init now if so.
+        if (this.mode === 'survival') this._initSurvival();
         if (this._pendingJoin) {
           this.join(this._pendingJoin);
           this._pendingJoin = null;
@@ -96,6 +119,7 @@ export class NetClient {
     this.mode = mode || this.mode;
     if (typeof color === 'number') this.color = color % 8;
     if (this.mode === 'creative' && !this.lobby) this._initCreative();
+    if (this.mode === 'survival' && !this._survInit && this.connected) this._initSurvival();
     if (!this.connected) { this._pendingJoin = { code, name, mode, color: this.color }; return; }
     this.conn.reducers.joinRoom({ code, name, mode, color: this.color });
   }
@@ -105,6 +129,26 @@ export class NetClient {
     this.lobby.onSubmitPrompt = (text) => { if (this.connected) this.conn.reducers.submitPrompt({ text }); };
     this.lobby.onForge = () => this.startBuild();
     this.course = new RingCourse(this.scene);
+  }
+
+  /**
+   * Lazy survival init. Safe to call repeatedly: the predator/sabotage/course
+   * objects + the sabotage_event onInsert callback are created exactly once,
+   * and only after we're connected (so this.conn.db exists).
+   */
+  _initSurvival() {
+    if (this._survInit || !this.connected || !this.conn) return;
+    this.predator = new Predator(this.scene);
+    this.sabotage = new SabotageFX(this.scene, () => this.flightPhysics);
+    this.survCourse = new RingCourse(this.scene);
+
+    // Apply each sabotage_event the instant it lands (EVENT table → onInsert).
+    this.conn.db.sabotageEvent.onInsert((_ctx, row) => {
+      this.sabotage.handleEvent(row, this.identityHex);
+    });
+
+    this._survInit = true;
+    console.log('[net] survival initialized');
   }
 
   setName(name) { if (this.connected) this.conn.reducers.setName({ name }); }
@@ -171,6 +215,8 @@ export class NetClient {
 
     // 3) Creative mode: lobby UI + co-authored world application.
     if (this.mode === 'creative' && this.lobby) this._driveCreative(room, roster);
+    // 3b) Survival mode: predator render, course, sabotage FX, elimination.
+    if (this.mode === 'survival') this._driveSurvival(room, roster, dt, camera);
 
     // 4) Surface room state for external UI/debug.
     if (this.onState) {
@@ -224,5 +270,118 @@ export class NetClient {
     }
 
     this.lobby.hide();
+  }
+
+  /** The predator row for a given room id (or null). */
+  _predatorRow(roomId) {
+    if (!this.conn || roomId === 0n) return null;
+    for (const p of this.conn.db.predator.iter()) if (p.roomId === roomId) return p;
+    return null;
+  }
+
+  /** Lazily create + return the red HUNTED vignette DOM element. */
+  _ensureVignette() {
+    if (this._vignette || typeof document === 'undefined') return this._vignette;
+    if (!document.getElementById('flk-hunted-style')) {
+      const style = document.createElement('style');
+      style.id = 'flk-hunted-style';
+      style.textContent = `
+        @keyframes flkHuntPulse { 0%,100%{opacity:.55} 50%{opacity:.9} }
+        .flk-hunted{position:fixed;inset:0;z-index:40;pointer-events:none;display:none;
+          box-shadow:inset 0 0 220px 60px rgba(200,12,12,.72);
+          animation:flkHuntPulse 1.1s ease-in-out infinite}
+        .flk-hunted::after{content:'HUNTED';position:absolute;top:18px;left:50%;
+          transform:translateX(-50%);color:#ff5151;font-family:system-ui,sans-serif;
+          font-weight:800;letter-spacing:6px;font-size:15px;
+          text-shadow:0 0 12px rgba(255,40,40,.8)}
+      `;
+      document.head.appendChild(style);
+    }
+    const el = document.createElement('div');
+    el.className = 'flk-hunted';
+    document.body.appendChild(el);
+    this._vignette = el;
+    return el;
+  }
+
+  _setVignette(on) {
+    const el = this._ensureVignette();
+    if (el) el.style.display = on ? 'block' : 'none';
+  }
+
+  /**
+   * Survival-mode driver: mirrors _driveCreative's world application, then adds
+   * the predator hawk, sabotage FX, proximity elimination, and HUNTED vignette.
+   * Creative mode is never touched by this path.
+   */
+  _driveSurvival(room, roster, dt, camera) {
+    // Lazy init (in case the survival join happened before connect).
+    if (!this._survInit && this.connected) this._initSurvival();
+    if (!this._survInit) return;
+
+    const state = room ? room.state : null;
+
+    // Always advance sabotage FX (handles fog restore even between states).
+    this.sabotage.update(dt);
+
+    if (state !== 'playing') {
+      // Not racing → no predator, reset per-match elimination/vignette state.
+      this.predator.reconcile(null, dt, camera);
+      this._setVignette(false);
+      this._survWorldApplied = false;
+      this._huntTimer = 0;
+      this._deathReported = false;
+      return;
+    }
+
+    // Apply the synced world ONCE (palette + course) exactly like _driveCreative.
+    if (!this._survWorldApplied) {
+      const cfgRow = this._worldConfig(room.id);
+      if (cfgRow && cfgRow.status === 'ready' && cfgRow.json) {
+        try {
+          const cfg = JSON.parse(cfgRow.json);
+          applyPalette(this.scene, cfg);
+          this.survCourse.build(cfg);
+          this._survWorldApplied = true;
+          console.log(`[net] survival world applied: theme=${cfg.theme}, ${cfg.rings?.length} rings`);
+        } catch (e) { console.warn('[net] bad world_config json', e); }
+      }
+    }
+
+    // Course progress → reportFinish on completion (once).
+    if (this._survWorldApplied && this.survCourse) {
+      const res = this.survCourse.update(this.localState.position);
+      if (res.justFinished) {
+        this.reportFinish();
+        console.log('[net] survival course complete → reportFinish');
+      }
+    }
+
+    // Predator render + proximity elimination.
+    const pRow = this._predatorRow(room.id);
+    this.predator.reconcile(pRow, dt, camera);
+
+    if (pRow && pRow.active) {
+      // HUNTED vignette when the predator is targeting ME.
+      let targetHex = null;
+      try { targetHex = pRow.targetPlayer.toHexString(); } catch { targetHex = null; }
+      this._setVignette(targetHex === this.identityHex);
+
+      // Continuous-proximity elimination.
+      const dist = this.predator.getPosition().distanceTo(this.localState.position);
+      if (dist < CATCH_RADIUS) {
+        this._huntTimer += dt;
+        if (this._huntTimer >= CATCH_SECONDS && !this._deathReported) {
+          this._deathReported = true;
+          this.reportDeath();
+          console.log('[net] predator caught me → reportDeath');
+        }
+      } else {
+        this._huntTimer = 0; // must be CONTINUOUS
+      }
+    } else {
+      this._setVignette(false);
+      this._huntTimer = 0;
+    }
   }
 }
