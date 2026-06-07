@@ -54,7 +54,8 @@ function offlinePWA({ base, outDir }) {
   };
 }
 
-const BASE = '/birdybird/';
+// Root base for Vercel ('/'); the original fork used '/birdybird/'.
+const BASE = '/';
 
 export default defineConfig({
   root: '.',

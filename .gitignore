@@ -21,3 +21,4 @@ _probe_*.ts
 # test artifacts
 chick-*.png
 smoke-*.png
+.vercel
