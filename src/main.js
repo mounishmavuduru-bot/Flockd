@@ -357,7 +357,9 @@ if (roomCode) {
   net.join({ code: roomCode, name: playerName, mode: mpMode });
   window.__net = net;
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'g' || e.key === 'G') net.startGame();
+    if (e.key === 'g' || e.key === 'G') {
+      if (mpMode === 'creative') net.startBuild(); else net.startGame();
+    }
   });
   console.log(`[net] joining room "${roomCode}" as ${playerName} (${mpMode})`);
 }

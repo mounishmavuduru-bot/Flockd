@@ -15,6 +15,8 @@
  */
 import { connectToFlocked } from './connection.js';
 import { RemoteBirds } from './remoteBirds.js';
+import { LobbyUI } from './lobbyUI.js';
+import { RingCourse, applyPalette } from './applyWorld.js';
 
 const DB_NAME = 'flocked';
 const SEND_HZ = 12;
@@ -53,6 +55,12 @@ export class NetClient {
     this.remote = new RemoteBirds(scene);
     this._lastSend = 0;
     this._pendingJoin = null;
+
+    // Creative mode
+    this.mode = null;
+    this.lobby = null;
+    this.course = null;
+    this.worldApplied = false;
   }
 
   connect() {
@@ -84,11 +92,22 @@ export class NetClient {
 
   // ---- reducer wrappers ----
   join({ code, name, mode }) {
+    this.mode = mode || this.mode;
+    if (this.mode === 'creative' && !this.lobby) this._initCreative();
     if (!this.connected) { this._pendingJoin = { code, name, mode }; return; }
     this.conn.reducers.joinRoom({ code, name, mode });
   }
+
+  _initCreative() {
+    this.lobby = new LobbyUI();
+    this.lobby.onSubmitPrompt = (text) => { if (this.connected) this.conn.reducers.submitPrompt({ text }); };
+    this.lobby.onForge = () => this.startBuild();
+    this.course = new RingCourse(this.scene);
+  }
+
   setName(name) { if (this.connected) this.conn.reducers.setName({ name }); }
   startGame() { if (this.connected) this.conn.reducers.startGame({}); }
+  startBuild() { if (this.connected) this.conn.reducers.startBuild(); }
   leave() { if (this.connected) this.conn.reducers.leaveRoom({}); }
   reportFinish() { if (this.connected) this.conn.reducers.reportFinish({}); }
   reportDeath() { if (this.connected) this.conn.reducers.reportDeath({}); }
@@ -108,12 +127,19 @@ export class NetClient {
     return null;
   }
 
+  _worldConfig(roomId) {
+    if (!this.conn) return null;
+    for (const w of this.conn.db.worldConfig.iter()) if (w.roomId === roomId) return w;
+    return null;
+  }
+
   /** Call once per frame after physics. */
   update(dt, camera) {
     if (!this.connected || !this.conn) return;
 
     const myRow = this._myRow();
     this.myRoomId = myRow ? myRow.roomId : 0n;
+    const room = this._room(this.myRoomId);
 
     // 1) Push my transform (throttled, only while in a room).
     const now = performance.now();
@@ -126,29 +152,72 @@ export class NetClient {
       });
     }
 
-    // 2) Collect remote birds in my room.
-    const rows = [];
+    // 2) Members in my room (online) → roster + remote birds.
+    const remoteRows = [];
+    const roster = [];
     if (this.myRoomId !== 0n) {
-      for (const row of this.conn.db.player.iter()) {
-        if (row.roomId !== this.myRoomId) continue;
-        if (row.identity.toHexString() === this.identityHex) continue;
-        if (!row.online) continue;
-        rows.push(row);
+      for (const r of this.conn.db.player.iter()) {
+        if (r.roomId !== this.myRoomId || !r.online) continue;
+        const me = r.identity.toHexString() === this.identityHex;
+        roster.push({ name: r.name, color: r.color, me });
+        if (!me) remoteRows.push(r);
       }
     }
-    this.remote.reconcile(rows, dt, camera);
+    this.remote.reconcile(remoteRows, dt, camera);
 
-    // 3) Surface room state for the UI.
+    // 3) Creative mode: lobby UI + co-authored world application.
+    if (this.mode === 'creative' && this.lobby) this._driveCreative(room, roster);
+
+    // 4) Surface room state for external UI/debug.
     if (this.onState) {
-      const room = this._room(this.myRoomId);
+      const isHost = !!(room && room.host.toHexString() === this.identityHex);
       this.onState({
         connected: this.connected,
         inRoom: this.myRoomId !== 0n,
         roomCode: room ? room.code : null,
         roomState: room ? room.state : null,
         mode: room ? room.mode : null,
-        players: rows.length + (this.myRoomId !== 0n ? 1 : 0),
+        isHost,
+        players: roster.length,
       });
     }
+  }
+
+  _driveCreative(room, roster) {
+    const state = room ? room.state : null;
+    const isHost = !!(room && room.host.toHexString() === this.identityHex);
+
+    if (state === 'lobby' || state === 'building') {
+      this.lobby.show();
+      this.lobby.setState({ roomCode: room.code, mode: room.mode, state, isHost, roster });
+      this.worldApplied = false;
+      return;
+    }
+
+    if (state === 'playing') {
+      this.lobby.hide();
+      if (!this.worldApplied) {
+        const cfgRow = this._worldConfig(room.id);
+        if (cfgRow && cfgRow.status === 'ready' && cfgRow.json) {
+          try {
+            const cfg = JSON.parse(cfgRow.json);
+            applyPalette(this.scene, cfg);
+            this.course.build(cfg);
+            this.worldApplied = true;
+            console.log(`[net] world applied: theme=${cfg.theme}, ${cfg.rings?.length} rings`);
+          } catch (e) { console.warn('[net] bad world_config json', e); }
+        }
+      }
+      if (this.worldApplied && this.course) {
+        const res = this.course.update(this.localState.position);
+        if (res.justFinished) {
+          this.reportFinish();
+          console.log('[net] course complete → reportFinish');
+        }
+      }
+      return;
+    }
+
+    this.lobby.hide();
   }
 }

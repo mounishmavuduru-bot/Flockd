@@ -30,9 +30,11 @@ Vertical-slice-first: demoable at every phase. Forked flight core already runs.
 - [x] AI sidecar (`services/ai-sidecar/`): subscribe → on `building`, fuse prompts → world JSON → `set_world_config` → room goes `playing`
 - [x] `worldgen.ts`: deterministic MOCK generator + Claude Haiku 4.5 path (structured output, prompt cache), drop-in via `ANTHROPIC_API_KEY`
 - [x] **Verified:** `test/creative-smoke.ts` — prompt "spooky frozen narrow canyons at night" → theme=night, 14 rings, synced + room `playing` in 300ms. PASS
-- [ ] Lobby UI (client): room code, player list, prompt box, host "Forge World" + "Forging your world…" screen
-- [ ] Client consumes `world_config`: apply sky/fog/water palette + spawn the ring course; race = fly the rings
-- [ ] **Slice demo:** group types prompts → world recolors + course appears → everyone races it
+- [x] Lobby UI (`src/net/lobbyUI.js`): room code, roster chips, prompt box, host "Forge World" + "Forging your world…" screen
+- [x] Client consumes `world_config` (`src/net/applyWorld.js`): sky/fog palette + spawns ring course; sequential ring-pass → reportFinish
+- [x] Wired into NetClient `_driveCreative`; build green (103 modules)
+- [ ] **Browser visual confirm** (human): join creative room in 2 tabs, submit prompts, Forge, race the co-authored course
+- [ ] Live Claude: drop `ANTHROPIC_API_KEY` in `.env`, restart sidecar (currently MOCK)
 
 ## Phase 3 — Survival mode + LLM #2 (battle royale + predator)
 - [ ] Battle-royale rules in `survival.js` (last-bird/first-finish, elimination)
