@@ -26,6 +26,7 @@ import { NestQuest } from './game/NestQuest.js';
 import { NestQuestUI } from './game/NestQuestUI.js';
 import { getBiomeForLevel, applyBiome } from './world/Biomes.js';
 import { SoundFX } from './audio/SoundFX.js';
+import { NetClient } from './net/index.js';
 // Mobile imports — MobileInput class stays lazy, but detect mobile synchronously
 // so desktop-only init (ringRush.start, initWebcam) doesn't fire on iPhones.
 let MobileInput, MobileUI;
@@ -337,6 +338,29 @@ window.__flightState = flightState;
 window.__flightPhysics = flightPhysics;
 window.__renderer = renderer;
 window.__cameraRig = cameraRig;
+
+// --- Multiplayer (SpacetimeDB) ---
+// Opt-in via ?room=CODE  e.g.  ?room=WIND&name=Mounish&mp=creative
+// Two tabs with the same ?room= see each other's storks in real time.
+// Press G to start the match as host (resets everyone + scoring).
+let net = null;
+const roomCode = urlParams.get('room');
+if (roomCode) {
+  const playerName = urlParams.get('name') || `Bird${Math.floor(Math.random() * 1000)}`;
+  const mpMode = urlParams.get('mp') === 'survival' ? 'survival' : 'creative';
+  net = new NetClient({
+    scene,
+    localState: flightState,
+    onState: (info) => { window.__netState = info; },
+  });
+  net.connect();
+  net.join({ code: roomCode, name: playerName, mode: mpMode });
+  window.__net = net;
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'g' || e.key === 'G') net.startGame();
+  });
+  console.log(`[net] joining room "${roomCode}" as ${playerName} (${mpMode})`);
+}
 window.__startAutopilot = (seq) => {
   if (!flightMode) {
     // Auto-enter flight mode
@@ -540,6 +564,9 @@ loop.onUpdate((dt) => {
   } else {
     controls.update();
   }
+
+  // Multiplayer: push my transform (throttled) + render remote birds.
+  if (net) net.update(dt, camera);
 
   renderer.render(scene, camera);
 });

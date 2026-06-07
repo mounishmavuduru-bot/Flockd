@@ -14,11 +14,12 @@ Vertical-slice-first: demoable at every phase. Forked flight core already runs.
 - [x] Tables: `room`, `player`, `tick_timer`; reducers: join/leave/lifecycle/`update_transform`/`start_game`/finish/death; scheduled `tick`
 - [x] `spacetime start` (local) + publish (`flocked` db) + `stdb:gen` bindings → `src/net/bindings`
 - [x] Backend validated end-to-end via CLI (join_room → room+player rows; start_game → state=playing)
-- [ ] `src/net/connection.js` connect/subscribe/reconnect (+ token persistence)
-- [ ] `src/net/remoteBirds.js` render+interpolate other storks
-- [ ] `src/net/sync.js` throttled local transform push
-- [ ] Wire net into `main.js` update loop
-- [ ] **Slice demo:** 2 browser tabs = 2 storks flying in the same world, seeing each other
+- [x] `src/net/connection.js` connect + token persistence (reconnect as same identity)
+- [x] `src/net/remoteBirds.js` render+interpolate other storks (reuses BirdModel + tint palette)
+- [x] `src/net/index.js` NetClient: throttled (12 Hz) transform push + per-frame remote reconcile
+- [x] Wire net into `main.js` (opt-in `?room=CODE&name=&mp=creative|survival`; G = host start)
+- [x] **Slice validated at network layer:** `test/mp-smoke.ts` — 2 real clients join 1 room, B sees A's synced transform <100ms, liveMembers=2 ✅
+- [ ] Visual confirm in browser (2 tabs) — needs a human; dev server + local STDB are running
 
 ### Phase 1 — known refinements (do in Phase 2 lobby work)
 - Count room members via live `online && roomId==X` filter instead of stored `playerCount` (reconnect-robust)
